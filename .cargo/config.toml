@@ -1,0 +1,4 @@
+# Keep dependency resolution compatible with `rust-version` in Cargo.toml,
+# so that `cargo update` does not silently break the MSRV build.
+[resolver]
+incompatible-rust-versions = "fallback"

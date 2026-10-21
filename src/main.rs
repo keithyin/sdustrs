@@ -277,5 +277,4 @@ mod tests {
             assert!(try_args(list).is_err(), "args: {list:?} should fail");
         }
     }
-
 }

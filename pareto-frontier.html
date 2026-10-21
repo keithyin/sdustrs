@@ -1,0 +1,1455 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="symmetric DUST 中 perfect 区间（Pareto 前沿）的构建过程：x 轴是区间长度 L，y 轴是密度 ρ = r/L；从固定右端向左枚举候选，只保留密度纪录点，形成一条台阶。">
+<meta name="theme-color" content="#070a0f">
+<title>Pareto 前沿的构建 · 从候选子区间到密度台阶</title>
+<style>
+:root{
+  --bg:#070a0f;
+  --bg-soft:#0b1017;
+  --panel:#0e141c;
+  --panel-2:#111924;
+  --line:#1d2833;
+  --line-soft:#16202a;
+  --ink:#e7eef6;
+  --dim:#93a4b8;
+  --dim2:#63758a;
+  --teal:#37d6c0;
+  --teal-soft:rgba(55,214,192,.12);
+  --violet:#a78bfa;
+  --violet-soft:rgba(167,139,250,.10);
+  --amber:#f0b354;
+  --red:#f4756b;
+  --mono:"JetBrains Mono","SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:"Inter",system-ui,-apple-system,"Segoe UI","PingFang SC","Hiragino Sans GB","Noto Sans SC",sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  -webkit-font-smoothing:antialiased;line-height:1.65;font-size:16px;overflow-x:hidden;
+}
+body::before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:
+    radial-gradient(900px 520px at 8% -6%,rgba(55,214,192,.09),transparent 60%),
+    radial-gradient(760px 480px at 96% 0%,rgba(167,139,250,.08),transparent 60%);
+}
+a{color:var(--teal);text-decoration:none}
+a:hover{text-decoration:underline}
+::selection{background:rgba(55,214,192,.28)}
+code{font-family:var(--mono)}
+
+.progress-track{position:fixed;top:0;left:0;right:0;height:2px;z-index:60}
+.progress-bar{height:100%;width:0;background:linear-gradient(90deg,var(--teal),var(--violet))}
+
+.topbar{position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);background:rgba(7,10,15,.8);border-bottom:1px solid var(--line-soft)}
+.topbar-inner{max-width:1180px;margin:0 auto;padding:12px 24px;display:flex;align-items:center;gap:22px}
+.brand{display:flex;align-items:baseline;gap:9px;font-family:var(--mono);font-size:14px;white-space:nowrap}
+.brand b{font-weight:600}
+.brand span{color:var(--dim2);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase}
+.navlinks{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
+.navlinks a{color:var(--dim);font-size:12.5px;padding:6px 10px;border-radius:8px;border:1px solid transparent;transition:.18s;text-decoration:none}
+.navlinks a:hover{color:var(--ink);background:var(--panel);border-color:var(--line)}
+.navlinks a.active{color:var(--teal);background:var(--teal-soft);border-color:rgba(55,214,192,.25)}
+
+main{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:0 24px 96px}
+section{scroll-margin-top:86px}
+
+.hero{padding:72px 0 30px;max-width:1000px}
+.eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--teal);display:flex;align-items:center;gap:10px;margin:0 0 20px}
+.eyebrow::before{content:"";width:26px;height:1px;background:linear-gradient(90deg,var(--teal),transparent)}
+h1{font-size:clamp(28px,4.4vw,48px);line-height:1.16;letter-spacing:-.028em;font-weight:650;margin:0 0 18px}
+h1 .g{background:linear-gradient(100deg,#8ef4e4,#37d6c0 42%,#a78bfa 92%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.lede{font-size:clamp(15px,1.75vw,17.5px);color:var(--dim);max-width:820px;margin:0 0 28px}
+.lede b{color:var(--ink);font-weight:560}
+.lede code,.prose code,.mini code{font-size:.88em;color:#cfe3f5;background:rgba(255,255,255,.045);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+
+.factbar{display:flex;gap:34px;flex-wrap:wrap;padding-top:20px;border-top:1px solid var(--line-soft)}
+.fact .k{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim2);margin-bottom:2px}
+.fact .v{font-family:var(--mono);font-size:19px;font-variant-numeric:tabular-nums}
+.fact .v small{font-size:11px;color:var(--dim2);margin-left:5px}
+
+.axis-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:34px 0 10px}
+.axis-card{position:relative;border:1px solid var(--line);border-radius:16px;padding:20px 22px 18px;background:linear-gradient(180deg,var(--panel),rgba(11,16,23,.5));overflow:hidden}
+.axis-card::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:16px}
+.axis-card.x{border-color:rgba(55,214,192,.3);background:linear-gradient(145deg,rgba(55,214,192,.07),var(--panel) 55%)}
+.axis-card.y{border-color:rgba(167,139,250,.3);background:linear-gradient(145deg,rgba(167,139,250,.07),var(--panel) 55%)}
+.axis-tag{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim2);display:flex;align-items:center;gap:8px}
+.axis-card.x .axis-tag{color:var(--teal)}
+.axis-card.y .axis-tag{color:var(--violet)}
+.axis-tag::after{content:"";height:1px;flex:1;background:currentColor;opacity:.25}
+.axis-name{display:flex;align-items:baseline;gap:10px;margin:8px 0 4px;flex-wrap:wrap}
+.axis-name h3{font-size:19px;margin:0;font-weight:620;letter-spacing:-.01em}
+.axis-name .sym{font-family:var(--mono);font-size:15px;color:var(--dim)}
+.axis-card p{margin:6px 0 0;font-size:13.5px;color:var(--dim);line-height:1.7}
+.axis-card p b{color:var(--ink);font-weight:560}
+.axis-dir{display:flex;align-items:center;gap:8px;margin-top:12px;font-family:var(--mono);font-size:11px;color:var(--dim2)}
+.axis-dir .arrow{width:54px;height:1px;background:linear-gradient(90deg,var(--dim2),transparent);position:relative}
+.axis-dir .arrow::after{content:"";position:absolute;right:0;top:-2.5px;border-left:5px solid var(--dim2);border-top:3px solid transparent;border-bottom:3px solid transparent}
+.axis-card.x .axis-dir .arrow{background:linear-gradient(90deg,var(--teal),transparent)}
+.axis-card.x .axis-dir .arrow::after{border-left-color:var(--teal)}
+.axis-card.y .axis-dir .arrow{background:linear-gradient(90deg,var(--violet),transparent)}
+.axis-card.y .axis-dir .arrow::after{border-left-color:var(--violet)}
+
+.pareto-def{margin:18px 0 0;border:1px solid var(--line);border-left:2px solid var(--amber);background:rgba(240,179,84,.045);border-radius:0 12px 12px 0;padding:15px 18px;font-size:13.5px;color:var(--dim)}
+.pareto-def b{color:var(--ink);font-weight:560}
+.pareto-def code{color:var(--amber)}
+
+.sec{padding:58px 0 4px}
+.sec-head{display:flex;gap:18px;align-items:flex-start;margin-bottom:24px}
+.sec-idx{font-family:var(--mono);font-size:12px;color:var(--dim2);padding-top:8px;min-width:34px;border-top:1px solid var(--line);letter-spacing:.08em}
+.sec-head h2{margin:0 0 8px;font-size:clamp(22px,2.9vw,30px);letter-spacing:-.022em;font-weight:640;line-height:1.3}
+.sec-head p{margin:0;color:var(--dim);max-width:820px;font-size:15px}
+.kicker{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;color:var(--violet);text-transform:uppercase;display:block;margin-bottom:8px}
+
+.split{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start}
+.split.wide{grid-template-columns:1.08fr .92fr}
+.prose{font-size:14.5px;color:var(--dim);line-height:1.75}
+.prose p{margin:0 0 14px}
+.prose b{color:var(--ink);font-weight:560}
+.prose .sym{font-family:var(--mono);color:#cfe3f5}
+.prose h3{font-size:16px;color:var(--ink);margin:22px 0 8px;font-weight:620;letter-spacing:-.01em}
+.prose h3:first-child{margin-top:0}
+.prose ul{margin:0 0 14px;padding-left:18px}
+.prose li{margin:5px 0}
+.prose li::marker{color:var(--teal)}
+
+.callout{border:1px solid var(--line);border-left:2px solid var(--violet);background:rgba(167,139,250,.055);border-radius:0 12px 12px 0;padding:14px 16px;margin:16px 0;font-size:13.5px;color:var(--dim);line-height:1.7}
+.callout b{color:var(--ink);font-weight:560}
+.callout .lbl{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--violet);margin-bottom:5px}
+.callout.amber{border-left-color:var(--amber);background:rgba(240,179,84,.05)}
+.callout.amber .lbl{color:var(--amber)}
+.callout.teal{border-left-color:var(--teal);background:rgba(55,214,192,.05)}
+.callout.teal .lbl{color:var(--teal)}
+
+.figcard{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,var(--panel),var(--bg-soft));padding:18px 18px 12px;position:relative;overflow:hidden}
+.figcard::before{content:"";position:absolute;left:0;right:0;top:0;height:1px;background:linear-gradient(90deg,transparent,rgba(55,214,192,.35),transparent)}
+.figcap{font-family:var(--mono);font-size:10.5px;color:var(--dim2);margin:8px 2px 0;line-height:1.6}
+.fig{width:100%;height:auto;display:block}
+.fig text{font-family:var(--mono);fill:var(--dim2);font-size:10px}
+.fig .f-axis{stroke:var(--line);stroke-width:1.2}
+.fig .f-grid{stroke:rgba(255,255,255,.055);stroke-dasharray:2 4}
+.fig .f-point{fill:var(--teal)}
+.fig .f-halo{fill:var(--teal);opacity:.14}
+.fig .f-drop{stroke:var(--teal);stroke-width:1;stroke-dasharray:3 4;opacity:.55}
+.fig .f-label{fill:var(--ink);font-size:10.5px}
+.fig .f-accent{fill:var(--violet)}
+.fig .f-note{fill:var(--dim2);font-size:9.5px}
+.fig .d-shade{fill:rgba(244,117,107,.075)}
+.fig .d-axis{stroke:var(--line);stroke-width:1.2}
+.fig .d-grid{stroke:rgba(255,255,255,.05);stroke-dasharray:2 4}
+.fig .d-a{fill:var(--teal)}
+.fig .d-b{fill:var(--red)}
+.fig .d-drop{stroke:var(--teal);stroke-width:1;stroke-dasharray:3 4;opacity:.5}
+.fig .d-label{fill:var(--ink);font-size:10.5px}
+.fig .d-warn{fill:var(--red);font-size:10px}
+.fig .d-dim{fill:var(--dim2);font-size:9.5px}
+
+.nest{border:1px solid var(--line);border-radius:14px;background:var(--bg-soft);padding:16px;margin:14px 0}
+.nest-head{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--dim2);padding:0 2px 8px;letter-spacing:.06em}
+.nest-row{display:grid;grid-template-columns:64px 1fr 76px;gap:10px;align-items:center;margin:6px 0}
+.nest-row code{font-size:11px;color:var(--dim);text-align:right}
+.nest-row .rlab{font-family:var(--mono);font-size:10.5px;color:var(--dim2)}
+.nest-track{position:relative;height:20px;border-radius:4px;background:rgba(255,255,255,.028);border:1px solid var(--line-soft);overflow:hidden}
+.nest-track::after{content:"";position:absolute;right:0;top:0;bottom:0;width:1px;background:rgba(55,214,192,.55)}
+.nest-bar{position:absolute;top:0;bottom:0;border-radius:2px;background:linear-gradient(90deg,rgba(55,214,192,.1),rgba(55,214,192,.28));border-left:1px solid rgba(55,214,192,.5)}
+.nest-bar b{position:absolute;left:7px;top:50%;transform:translateY(-50%);font-family:var(--mono);font-size:9.5px;font-weight:400;color:#a9efe5;white-space:nowrap}
+.nest-foot{display:flex;justify-content:space-between;margin-top:8px;font-family:var(--mono);font-size:10px;color:var(--dim2)}
+
+.formula-card{border:1px solid var(--line);border-radius:14px;background:var(--bg-soft);padding:18px;margin:16px 0}
+.formula-card .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim2);margin-bottom:8px}
+.formula-card .eq{font-family:var(--mono);font-size:15px;color:var(--ink);overflow-x:auto;white-space:nowrap}
+.formula-card .eq .t{color:var(--teal)}
+.formula-card .eq .v{color:var(--violet)}
+.formula-card p{margin:8px 0 0;font-size:12px;color:var(--dim2);line-height:1.7}
+
+.explorer{display:grid;grid-template-columns:minmax(0,1fr) 344px;gap:16px;align-items:start}
+.chart-card{background:linear-gradient(180deg,var(--panel),var(--bg-soft));border:1px solid var(--line);border-radius:16px;padding:16px 16px 14px;min-width:0}
+.chart-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.chart-title{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim2)}
+.seg{display:inline-flex;gap:2px;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:3px}
+.seg button{appearance:none;border:0;background:transparent;color:var(--dim2);font-family:var(--mono);font-size:10.5px;padding:5px 9px;border-radius:6px;cursor:pointer;transition:.16s;white-space:nowrap}
+.seg button:hover{color:var(--ink)}
+.seg button.on{background:var(--teal-soft);color:var(--teal)}
+
+.strip-wrap{margin:4px 0 12px}
+.strip{position:relative;height:42px;border:1px solid var(--line);border-radius:8px;background:var(--bg);overflow:hidden;
+  background-image:linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px);background-size:calc(100% / 64) 100%}
+.strip-span{position:absolute;top:0;bottom:0;border-radius:5px;background:linear-gradient(90deg,rgba(55,214,192,.08),rgba(55,214,192,.3));border:1px solid rgba(55,214,192,.55);transition:left .32s ease,width .32s ease,background .2s,border-color .2s;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.strip-span.reject{background:linear-gradient(90deg,rgba(244,117,107,.06),rgba(244,117,107,.22));border-color:rgba(244,117,107,.5)}
+.strip-span span{font-family:var(--mono);font-size:10px;color:#d8fff9;white-space:nowrap;padding:0 6px}
+.strip-span.reject span{color:#ffd9d5}
+.strip-edge{position:absolute;right:0;top:0;bottom:0;width:2px;background:rgba(55,214,192,.7)}
+.strip-edge::after{content:"finish";position:absolute;right:2px;top:-16px;font-family:var(--mono);font-size:9px;color:var(--teal);letter-spacing:.05em}
+.strip-scale{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--dim2);margin-top:16px;padding:0 1px}
+.strip-hint{font-family:var(--mono);font-size:9.5px;color:var(--dim2);margin-top:6px}
+
+.chart-wrap{position:relative;min-width:0}
+#chart{width:100%;height:auto;display:block;touch-action:manipulation}
+.tip{position:absolute;z-index:5;pointer-events:none;opacity:0;transform:translate(-50%,-112%);transition:opacity .12s;background:#0a1119;border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-family:var(--mono);font-size:10.5px;line-height:1.6;color:var(--dim);box-shadow:0 10px 30px rgba(0,0,0,.45);white-space:nowrap}
+.tip.on{opacity:1}
+.tip b{color:var(--ink);font-weight:500}
+.tip .tip-keep{color:var(--teal)}
+.tip .tip-drop{color:var(--red)}
+.tip .tip-idle{color:var(--dim2)}
+
+.tick{font-family:var(--mono);font-size:9.5px;fill:var(--dim2)}
+.axis-title{font-family:var(--mono);font-size:10.5px;fill:var(--dim);letter-spacing:.03em}
+.plane{font-family:var(--mono);font-size:9.5px;fill:var(--dim2);letter-spacing:.1em}
+.gridline{stroke:rgba(255,255,255,.05);stroke-width:1}
+.axis{stroke:var(--line);stroke-width:1.2}
+.thr{stroke:var(--amber);stroke-width:1.1;stroke-dasharray:5 5;opacity:.65}
+.thr-label{font-family:var(--mono);font-size:9.5px;fill:var(--amber);opacity:.9}
+.pt-ghost{fill:var(--bg-soft);stroke:#2b3c4d;stroke-width:1.2}
+.pt-keep{fill:var(--teal);stroke:#071016;stroke-width:1.6}
+.pt-halo{fill:var(--teal);opacity:.13}
+.pt-drop{stroke:var(--red);stroke-width:1.8;stroke-linecap:round}
+.pt-now{fill:none;stroke:var(--amber);stroke-width:1.5;opacity:.9}
+.drop-line{stroke:var(--amber);stroke-width:1;stroke-dasharray:3 4;opacity:.4}
+.pt-label{font-family:var(--mono);font-size:9.5px;fill:#9ff0e4}
+.pt-drop-label{font-family:var(--mono);font-size:9px;fill:rgba(244,117,107,.85)}
+.frontier-line{fill:none;stroke:var(--teal);stroke-width:2;stroke-linejoin:round}
+.frontier-fill{opacity:.55;stroke:none}
+.ray{stroke:var(--teal);stroke-width:1;stroke-dasharray:4 4;opacity:.22}
+.ray-last{stroke:var(--violet);stroke-width:1.7;stroke-dasharray:none;opacity:.8}
+.ray-label{font-family:var(--mono);font-size:9.5px;fill:var(--violet)}
+
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin:2px 0 0;padding-top:10px;border-top:1px solid var(--line-soft);font-size:11px;color:var(--dim2)}
+.legend span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.legend i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.legend i.keep{background:var(--teal)}
+.legend i.drop{position:relative;background:transparent}
+.legend i.drop::before,.legend i.drop::after{content:"";position:absolute;left:-1px;top:3px;width:10px;height:1.5px;background:var(--red);border-radius:1px}
+.legend i.drop::before{transform:rotate(45deg)}
+.legend i.drop::after{transform:rotate(-45deg)}
+.legend i.ghost{background:transparent;border:1px solid #2b3c4d}
+.legend i.thr{width:12px;height:0;border-top:1px dashed var(--amber);border-radius:0}
+.mode-note{font-family:var(--mono);font-size:10px;color:var(--dim2);line-height:1.6;margin-top:8px;min-height:16px}
+
+.controls{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-top:10px}
+.btn{appearance:none;border:1px solid var(--line);background:var(--panel-2);color:var(--dim);font-family:var(--mono);font-size:11px;padding:7px 11px;border-radius:8px;cursor:pointer;transition:.16s;white-space:nowrap}
+.btn:hover:not(:disabled){border-color:rgba(55,214,192,.4);color:var(--ink);background:rgba(55,214,192,.06)}
+.btn:disabled{opacity:.32;cursor:not-allowed}
+.btn.primary{background:var(--teal-soft);border-color:rgba(55,214,192,.35);color:var(--teal)}
+.btn.primary:hover{background:rgba(55,214,192,.18);color:#c8fff7}
+.progress-mini{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--dim2);font-variant-numeric:tabular-nums}
+kbd{font-family:var(--mono);font-size:9.5px;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;color:var(--dim2)}
+
+.step-panel{background:linear-gradient(180deg,var(--panel),var(--bg-soft));border:1px solid var(--line);border-radius:16px;padding:18px;position:sticky;top:82px;max-height:calc(100vh - 104px);overflow:auto;scrollbar-width:thin}
+.panel-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}
+.step-index{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--dim2)}
+.badge{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:999px;border:1px solid var(--line);color:var(--dim2);white-space:nowrap}
+.badge.keep{color:var(--teal);border-color:rgba(55,214,192,.35);background:var(--teal-soft)}
+.badge.drop{color:var(--red);border-color:rgba(244,117,107,.35);background:rgba(244,117,107,.09)}
+.badge.idle{color:var(--dim2);border-color:var(--line);background:rgba(255,255,255,.02)}
+.cand-title{font-size:14.5px;font-weight:600;margin:10px 0 12px;letter-spacing:-.01em}
+.cand-title .mono{font-family:var(--mono);font-weight:400;color:var(--dim2);font-size:11px}
+.kv{display:grid;grid-template-columns:76px 1fr;gap:7px 10px;font-size:12px;margin-bottom:12px}
+.kv dt{font-family:var(--mono);font-size:10px;color:var(--dim2);letter-spacing:.05em;padding-top:2px}
+.kv dd{margin:0;font-family:var(--mono);color:var(--ink);font-size:12px;font-variant-numeric:tabular-nums}
+.kv dd small{color:var(--dim2);font-size:10px}
+.formula{font-family:var(--mono);font-size:11.5px;line-height:1.7;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 10px;overflow-x:auto;white-space:nowrap;color:var(--dim)}
+.formula .ok{color:var(--teal)}
+.formula .bad{color:var(--red)}
+.verdict{font-size:12.5px;color:var(--dim);line-height:1.65;margin:11px 0 0}
+.verdict b{color:var(--ink);font-weight:560}
+.verdict .ok{color:var(--teal)}
+.verdict .bad{color:var(--red)}
+.record{margin-top:12px;padding-top:11px;border-top:1px solid var(--line-soft);font-family:var(--mono);font-size:10.5px;color:var(--dim2);line-height:1.7}
+.record b{color:var(--ink);font-weight:400}
+.chips-wrap{margin-top:10px}
+.chips-lbl{font-family:var(--mono);font-size:9.5px;color:var(--dim2);letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}
+.chips{display:flex;gap:5px;flex-wrap:wrap;min-height:22px}
+.chip{font-family:var(--mono);font-size:10px;padding:2px 7px;border-radius:6px;border:1px solid rgba(55,214,192,.28);background:rgba(55,214,192,.07);color:#a9efe5}
+.chip.empty{border-color:var(--line);background:transparent;color:var(--dim2)}
+.panel-foot{margin-top:12px;font-size:10.5px;color:var(--dim2);line-height:1.6;border-top:1px solid var(--line-soft);padding-top:10px}
+
+.table-card{border:1px solid var(--line);border-radius:16px;background:var(--panel);margin-top:16px;overflow:hidden}
+.table-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:13px 16px;border-bottom:1px solid var(--line-soft);flex-wrap:wrap}
+.table-head h3{margin:0;font-size:13px;font-weight:600;letter-spacing:-.01em}
+.table-head span{font-family:var(--mono);font-size:10px;color:var(--dim2)}
+.table-scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:11.5px;min-width:720px}
+th{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim2);font-weight:400;text-align:left;padding:9px 12px;border-bottom:1px solid var(--line-soft);white-space:nowrap}
+td{padding:8px 12px;border-top:1px solid rgba(255,255,255,.035);font-family:var(--mono);color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap}
+tbody tr{cursor:pointer;transition:background .14s}
+tbody tr:hover{background:rgba(255,255,255,.025)}
+tbody tr.future{opacity:.28}
+tbody tr.current{background:rgba(240,179,84,.065)}
+tbody tr.current td{color:var(--ink)}
+tbody tr.kept td:first-child{box-shadow:inset 2px 0 var(--teal)}
+tbody tr.dropped td:first-child{box-shadow:inset 2px 0 var(--red)}
+.pill{font-family:var(--mono);font-size:9.5px;padding:2px 7px;border-radius:999px;border:1px solid}
+.pill.keep{color:var(--teal);border-color:rgba(55,214,192,.3);background:rgba(55,214,192,.07)}
+.pill.drop{color:var(--red);border-color:rgba(244,117,107,.3);background:rgba(244,117,107,.07)}
+
+.code-card{border:1px solid var(--line);border-radius:16px;background:#080d13;overflow:hidden;margin-top:16px}
+.code-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 16px;border-bottom:1px solid var(--line-soft);background:rgba(255,255,255,.018);flex-wrap:wrap}
+.code-head .file{font-family:var(--mono);font-size:11px;color:var(--dim)}
+.code-head .file b{color:var(--teal);font-weight:400}
+.code-head .tagline{font-family:var(--mono);font-size:9.5px;color:var(--dim2)}
+pre.code{margin:0;padding:16px 18px 20px;overflow-x:auto;font-family:var(--mono);font-size:12px;line-height:1.75;color:#cfe3f5;tab-size:4}
+pre.code .cm{color:#5f7488}
+pre.code .kw{color:#c4b5fd}
+pre.code .num{color:#f0b354}
+pre.code .fn{color:#7dd3fc}
+pre.code .hl{background:rgba(55,214,192,.075);border-radius:3px;box-shadow:0 0 0 2px rgba(55,214,192,.075)}
+.code-note{font-size:12px;color:var(--dim2);line-height:1.7;margin:10px 0 0}
+
+.edge-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.edge{border:1px solid var(--line);border-radius:13px;background:var(--panel);padding:15px 16px}
+.edge .no{font-family:var(--mono);font-size:9.5px;color:var(--dim2);letter-spacing:.1em;margin-bottom:6px}
+.edge h4{margin:0 0 6px;font-size:13.5px;font-weight:600;letter-spacing:-.01em}
+.edge p{margin:0;font-size:12.5px;color:var(--dim);line-height:1.65}
+.edge p b{color:var(--ink);font-weight:560}
+.edge code{font-size:.88em;color:#cfe3f5;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:4px;padding:0 4px}
+
+.recap{border:1px solid var(--line);border-radius:16px;padding:20px 22px;background:linear-gradient(120deg,rgba(55,214,192,.06),rgba(167,139,250,.05),transparent 75%);margin-top:18px}
+.recap-lbl{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--teal);margin-bottom:10px}
+.recap-flow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;color:var(--dim)}
+.recap-flow b{color:var(--ink);font-weight:400}
+.recap-flow .sep{color:var(--dim2)}
+.recap p{margin:12px 0 0;font-size:12.5px;color:var(--dim2);line-height:1.7}
+
+.footer{margin-top:56px;padding-top:22px;border-top:1px solid var(--line-soft);display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;color:var(--dim2)}
+.footer a{color:var(--dim);text-decoration:none;margin-right:14px}
+.footer a:hover{color:var(--teal)}
+.footer .meta{line-height:1.8}
+
+@media (max-width:980px){
+  .explorer{grid-template-columns:1fr}
+  .step-panel{position:static;max-height:none}
+  .split,.split.wide{grid-template-columns:1fr}
+  .edge-grid{grid-template-columns:1fr 1fr}
+}
+@media (max-width:720px){
+  .topbar-inner{padding:10px 16px;gap:10px}
+  .brand span{display:none}
+  .navlinks{gap:1px}
+  .navlinks a{padding:5px 7px;font-size:11.5px}
+  .navlinks a:nth-child(n+5){display:none}
+  main{padding:0 16px 64px}
+  .hero{padding:48px 0 22px}
+  .axis-grid{grid-template-columns:1fr}
+  .factbar{gap:20px}
+  .sec{padding:44px 0 2px}
+  .sec-head{gap:12px}
+  .sec-idx{min-width:26px;font-size:11px}
+  .edge-grid{grid-template-columns:1fr}
+  .controls{gap:5px}
+  .progress-mini{width:100%;margin-left:0;text-align:right}
+  .strip-row{gap:6px}
+  .nest-row{grid-template-columns:52px 1fr 62px;gap:6px}
+  .chart-card{padding:12px}
+  .step-panel{padding:15px}
+  .recap{padding:16px}
+
+  /* 静态示意图在窄屏上不被整体缩小到看不清 */
+  .fig text{font-size:12.5px}
+  .fig .f-label{font-size:14px}
+  .fig .f-note{font-size:11.5px}
+  .fig .d-label{font-size:14px}
+  .fig .d-warn{font-size:12.5px}
+  .fig .d-dim{font-size:12px}
+}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  .strip-span,.btn,.seg button{transition:none}
+}
+</style>
+</head>
+<body>
+<div class="progress-track" aria-hidden="true"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><b>SDUST</b><span>/ Pareto frontier</span></div>
+    <nav class="navlinks" aria-label="页面导航">
+      <a href="#axes" class="active">坐标轴</a>
+      <a href="#candidates">候选点</a>
+      <a href="#dominance">支配</a>
+      <a href="#build">构建</a>
+      <a href="#code">代码</a>
+      <a href="#edges">边界</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <p class="eyebrow">symmetric DUST · perfect intervals</p>
+    <h1>Pareto 前沿是怎么<span class="g">长出来</span>的</h1>
+    <p class="lede">
+      一个窗口里，从右端向左可以切出几十个候选子区间：长度不同、重复配对数也不同。
+      最后只有少数几个进入 <code>perfect</code> 列表。留下谁、丢掉谁，可以完全画在一张二维图上：
+      <b>x 轴是区间长度，y 轴是区间密度</b>。所谓 Pareto 前沿，就是这张图上那条从左下往右上爬的台阶，
+      每一格都代表一次“密度纪录”。
+    </p>
+
+    <div class="axis-grid">
+      <div class="axis-card x">
+        <div class="axis-tag">X axis</div>
+        <div class="axis-name"><h3>区间长度</h3><span class="sym">L</span></div>
+        <p>区间包含的 <b>3-mer 个数</b>。所有候选共享同一个右端 <code>finish</code>，起点越往左，<span class="sym">L</span> 越大。</p>
+        <div class="axis-dir"><span>更短</span><span class="arrow"></span><span>更长</span></div>
+      </div>
+      <div class="axis-card y">
+        <div class="axis-tag">Y axis</div>
+        <div class="axis-name"><h3>区间密度</h3><span class="sym">ρ = r / L</span></div>
+        <p>区间内相同 3-mer 的<b>无序配对数 r</b> 除以长度 <span class="sym">L</span>。向上更密，门控线在 <span class="sym">ρ = T/10</span>。</p>
+        <div class="axis-dir"><span>下方更稀</span><span style="flex:1"></span><span>上方更密</span></div>
+      </div>
+    </div>
+
+    <p class="pareto-def">
+      <b>一般定义：</b>给定候选集合和两个目标——<b>最小化长度 L</b>、<b>最大化密度 ρ</b>。若不存在另一个候选在两个目标上都不差、且至少一个更好，
+      该候选就是 Pareto 最优的；所有这样的点构成 Pareto 前沿。在这张图上，前沿是一条只能向<b>右上</b>走的台阶。
+    </p>
+
+    <div class="factbar">
+      <div class="fact"><div class="k">示例窗口</div><div class="v">64 <small>个 3-mer 位置</small></div></div>
+      <div class="fact"><div class="k">候选点</div><div class="v">10</div></div>
+      <div class="fact"><div class="k">前沿点</div><div class="v" style="color:var(--teal)">5</div></div>
+      <div class="fact"><div class="k">默认门控</div><div class="v">ρ &gt; 2 <small>T = 20</small></div></div>
+    </div>
+  </section>
+
+  <section class="sec" id="axes">
+    <div class="sec-head">
+      <div class="sec-idx">01</div>
+      <div>
+        <span class="kicker">the two axes</span>
+        <h2>先把两条轴钉死：x 是长度，y 是密度</h2>
+        <p>这张图最容易画错的两件事：把 x 轴当成基因组坐标，把 y 轴当成配对数 r。它们都不是。</p>
+      </div>
+    </div>
+
+    <div class="split wide">
+      <div class="prose">
+        <h3>x 轴：区间长度 L</h3>
+        <p>
+          代码里每次向左吃进一个 3-mer，<code>new_len = size - i - 1</code> 就增加 1。这个 <span class="sym">L</span> 就是候选区间包含的
+          3-mer 个数；换成碱基跨度是 <span class="sym">L + 2</span>。所有候选的右端都固定在窗口右缘，所以“长度”等价于“起点向左伸到多远”。
+        </p>
+        <p>
+          <b>方向要注意：</b>向右是变长，在这个目标上是<b>变差</b>。前沿从左下往右上走，不是常见的“左上更好”。
+        </p>
+
+        <h3>y 轴：密度 ρ = r / L</h3>
+        <p>
+          <span class="sym">r</span> 是区间内<b>相同 3-mer 的无序配对数</b>：每一对位置上的 3-mer 相同，就贡献 1。
+          它不是“重复 3-mer 的个数”，所以 <span class="sym">ρ</span> 可以大于 1。比如一段 poly-A 的 <span class="sym">L</span> 个 3-mer，
+          两两都相同，<span class="sym">r = L(L−1)/2</span>，密度约为 <span class="sym">(L−1)/2</span>。
+        </p>
+        <p>
+          密度把“配对数更多”的收益和“区间更长”的代价放进同一个尺度：一个点 <span class="sym">(L, r)</span> 的密度，
+          就是原点连到它的<b>斜率</b>。
+        </p>
+
+        <div class="callout amber">
+          <span class="lbl">最容易错的一点</span>
+          <b>y 轴不是 r。</b>如果直接把配对数 <span class="sym">r</span> 当 y 轴，所有候选都会随着向左延长而“更高更右”，
+          没有哪个点会被另一个点支配，所谓前沿就退化成整条候选折线。必须用比值 <span class="sym">ρ</span> 才能比较。
+        </div>
+      </div>
+
+      <div>
+        <div class="figcard">
+          <svg class="fig" viewBox="0 0 560 340" role="img" aria-label="一个候选区间在长度-密度平面上的坐标">
+            <defs>
+              <linearGradient id="figPointGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#37d6c0" stop-opacity=".25"/>
+                <stop offset="1" stop-color="#37d6c0" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <g class="f-grid">
+              <line x1="70" y1="113.3" x2="520" y2="113.3"/>
+              <line x1="70" y1="196.7" x2="520" y2="196.7"/>
+              <line x1="182.5" y1="30" x2="182.5" y2="280"/>
+              <line x1="295" y1="30" x2="295" y2="280"/>
+              <line x1="407.5" y1="30" x2="407.5" y2="280"/>
+            </g>
+            <line class="f-axis" x1="70" y1="280" x2="520" y2="280"/>
+            <line class="f-axis" x1="70" y1="30" x2="70" y2="280"/>
+            <text x="70" y="296" text-anchor="middle">0</text>
+            <text x="182.5" y="296" text-anchor="middle">16</text>
+            <text x="295" y="296" text-anchor="middle">32</text>
+            <text x="407.5" y="296" text-anchor="middle">48</text>
+            <text x="520" y="296" text-anchor="middle">64</text>
+            <text x="60" y="283" text-anchor="end">0</text>
+            <text x="60" y="199.7" text-anchor="end">1.0</text>
+            <text x="60" y="116.3" text-anchor="end">2.0</text>
+            <text x="60" y="33" text-anchor="end">3.0</text>
+            <text x="295" y="322" text-anchor="middle">L（3-mer 数）</text>
+            <text x="20" y="155" text-anchor="middle" transform="rotate(-90 20 155)">ρ = r / L</text>
+
+            <line class="f-drop" x1="238.8" y1="61.3" x2="70" y2="61.3"/>
+            <line class="f-drop" x1="238.8" y1="61.3" x2="238.8" y2="280"/>
+            <circle class="f-halo" cx="238.8" cy="61.3" r="14"/>
+            <circle class="f-point" cx="238.8" cy="61.3" r="5.5"/>
+            <text class="f-label" x="250" y="50">候选区间</text>
+            <text class="f-note" x="250" y="66">L = 24，r = 63</text>
+            <text class="f-note" x="250" y="82">ρ = 63 / 24 = 2.625</text>
+            <text class="f-accent" x="86" y="54">ρ 轴读数</text>
+            <text class="f-accent" x="246" y="304">L 轴读数</text>
+          </svg>
+          <p class="figcap">一个候选 = 一个点。x 读数来自区间长度，y 读数来自密度；r 只参与计算，不直接占一条轴。</p>
+        </div>
+
+        <div class="formula-card">
+          <div class="lbl">code plane vs. objective plane</div>
+          <div class="eq">(L, r) <span class="t">高度是 r</span>　　<span class="v">密度 = 斜率</span></div>
+          <div class="eq" style="margin-top:6px">(L, ρ) <span class="t">高度就是判据</span></div>
+          <p>代码内部用 <span class="mono">(L, r)</span> 做整数运算；画图时用 <span class="mono">(L, ρ)</span> 更直观。两者保留的是同一批点：<b>斜率创新高 = 密度创新高</b>。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" id="candidates">
+    <div class="sec-head">
+      <div class="sec-idx">02</div>
+      <div>
+        <span class="kicker">where the points come from</span>
+        <h2>候选点：固定右端，向左枚举</h2>
+        <p>不是在全基因组上找区间，而是在一个可疑窗口里，把“以 finish 结尾的所有后缀”逐个切出来。</p>
+      </div>
+    </div>
+
+    <div class="split">
+      <div class="prose">
+        <p>
+          当窗口的 <b>右端 finish 固定</b>时，从右往左移动起点，得到的候选区间是层层嵌套的：
+          后一个区间总是包含前一个，只是左边多出一段。长度 <span class="sym">L</span> 每次加 1。
+        </p>
+
+        <div class="nest" aria-label="嵌套候选区间示意">
+          <div class="nest-head"><span>起点向左 ←</span><span>finish 固定</span></div>
+          <div class="nest-row"><code>L = 8</code><div class="nest-track"><div class="nest-bar" style="left:87.5%;width:12.5%"></div></div><span class="rlab">r = 18</span></div>
+          <div class="nest-row"><code>L = 12</code><div class="nest-track"><div class="nest-bar" style="left:81.25%;width:18.75%"></div></div><span class="rlab">r = 30</span></div>
+          <div class="nest-row"><code>L = 24</code><div class="nest-track"><div class="nest-bar" style="left:62.5%;width:37.5%"><b>L = 24</b></div></div><span class="rlab">r = 63</span></div>
+          <div class="nest-row"><code>L = 64</code><div class="nest-track"><div class="nest-bar" style="left:0;width:100%"><b>整个窗口</b></div></div><span class="rlab">r = 176</span></div>
+          <div class="nest-foot"><span>窗口起点</span><span>每格 = 1 个 3-mer 位置</span></div>
+        </div>
+
+        <h3>配对数 r 是增量算出来的</h3>
+        <p>
+          向左吃进一个新的 3-mer <span class="sym">w</span> 时，它只和右侧已有的 <span class="sym">w</span> 配对。所以
+          <span class="sym">r_new = r_old + count_old(w)</span>，一次加法即可，不需要重新扫整段序列。
+        </p>
+        <p>
+          代码里就是 <code>win_pairs += win_counts[word]</code> 再 <code>win_counts[word] += 1</code>。
+          这也是为什么枚举所有起点仍然便宜：每个候选点 <span class="sym">O(1)</span> 更新。
+        </p>
+      </div>
+
+      <div>
+        <div class="formula-card">
+          <div class="lbl">incremental pair count</div>
+          <div class="eq"><span class="v">r</span><sub>new</sub> = <span class="v">r</span><sub>old</sub> + count<sub>old</sub>(<span class="t">w</span>)</div>
+          <p>新 3-mer 与旧后缀里每个相同的 3-mer 各形成一对；旧后缀内部的配对已经算过。</p>
+        </div>
+
+        <div class="callout teal">
+          <span class="lbl">候选门控</span>
+          不是每个后缀都值得比较。先算 <b>10r &gt; T·L</b>（默认 T = 20，等价于 <b>ρ &gt; 2</b>）；
+          不满足就直接跳过，不会成为图上的候选点。所以候选点全部落在门控线以上。
+        </div>
+
+        <div class="callout">
+          <span class="lbl">为什么右端固定</span>
+          算法用滑动窗口扫描序列。右端固定时，所有候选共享同一个 <code>finish</code>，长度与起点一一对应，
+          比较就退化成一条一维的“长度轴”。窗口滑走之后，已确定的区间会被输出并与相邻区间合并。
+        </div>
+
+        <p class="figcap" style="margin-top:2px">
+          示例参数：窗口内 64 个 3-mer 位置（约 66 bp），T = 20；默认窗口是 64 bp。表中只列出通过门控的 10 个候选；逐碱基扫描时，其余位置在门控处就被跳过了。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" id="dominance">
+    <div class="sec-head">
+      <div class="sec-idx">03</div>
+      <div>
+        <span class="kicker">dominance</span>
+        <h2>什么叫“被支配”：更短，而且不更稀</h2>
+        <p>前沿不是“密度最高的点”，而是所有没有被别的候选在两个目标上同时压住的点。</p>
+      </div>
+    </div>
+
+    <div class="split wide">
+      <div class="prose">
+        <p>
+          设两个候选 <span class="sym">A = (L_A, ρ_A)</span>、<span class="sym">B = (L_B, ρ_B)</span>。若
+        </p>
+        <div class="formula-card" style="margin:10px 0 14px">
+          <div class="lbl">dominance</div>
+          <div class="eq"><span class="t">L<sub>A</sub> ≤ L<sub>B</sub></span>　且　<span class="v">ρ<sub>A</sub> ≥ ρ<sub>B</sub></span>　（至少一个严格）</div>
+          <p>则 A 支配 B。B 被丢弃：不用更长的区间，就已经能得到不更低的密度。</p>
+        </div>
+        <p>
+          因为所有候选共享右端，<b>更短的区间一定是更长区间的后缀</b>。A 更短且不更稀，意味着 B 多出来的那段前缀把平均密度拉低了；
+          B 不能提供比 A 更强的低复杂度证据。于是 B 从“密度见证点”的集合里被删掉。
+        </p>
+
+        <h3>为什么只需要和一个点比较</h3>
+        <p>
+          在一次扫描内按 <span class="sym">L</span> 递增处理时，已保留点的密度是<b>非降</b>的，最后一个保留点就是当前纪录 <span class="sym">(L*, r*)</span>。
+          对任何更早的点 <span class="sym">A</span>，都有 <span class="sym">L_A ≤ L*</span> 且 <span class="sym">ρ_A ≤ ρ*</span>。
+        </p>
+        <ul>
+          <li>若新点密度 <span class="sym">ρ ≥ ρ*</span>，它也不低于所有更早的点，不会被他点支配。</li>
+          <li>若 <span class="sym">ρ &lt; ρ*</span>，当前纪录点就直接支配它，无需再看别人。</li>
+        </ul>
+        <p>所以每一步只做一次比较；“当前纪录”可以用一个分数 <span class="sym">r*/L*</span> 增量维护。</p>
+
+        <div class="callout amber">
+          <span class="lbl">相等怎么办</span>
+          严格 Pareto 会丢掉“同样密度但更长”的点。代码用的是 <code>≥</code>，会把它保留下来：
+          同样的密度下覆盖更长，且最终合并不会产生额外区间，属于有意的 tie 处理。示例数据刻意没有相等值，台阶看起来更干净。
+        </div>
+      </div>
+
+      <div>
+        <div class="figcard">
+          <svg class="fig" viewBox="0 0 560 330" role="img" aria-label="支配关系示意：A 更短且密度更高，B 落在 A 的右下阴影中">
+            <g class="d-grid">
+              <line x1="70" y1="110" x2="520" y2="110"/>
+              <line x1="70" y1="190" x2="520" y2="190"/>
+              <line x1="182.5" y1="30" x2="182.5" y2="270"/>
+              <line x1="295" y1="30" x2="295" y2="270"/>
+              <line x1="407.5" y1="30" x2="407.5" y2="270"/>
+            </g>
+            <rect class="d-shade" x="154.4" y="70" width="365.6" height="200"/>
+            <line class="d-axis" x1="70" y1="270" x2="520" y2="270"/>
+            <line class="d-axis" x1="70" y1="30" x2="70" y2="270"/>
+            <text x="70" y="286" text-anchor="middle">0</text>
+            <text x="182.5" y="286" text-anchor="middle">16</text>
+            <text x="295" y="286" text-anchor="middle">32</text>
+            <text x="407.5" y="286" text-anchor="middle">48</text>
+            <text x="520" y="286" text-anchor="middle">64</text>
+            <text x="60" y="273" text-anchor="end">0</text>
+            <text x="60" y="193" text-anchor="end">1.0</text>
+            <text x="60" y="113" text-anchor="end">2.0</text>
+            <text x="60" y="33" text-anchor="end">3.0</text>
+            <text x="295" y="314" text-anchor="middle">L（越右越长）</text>
+            <text x="20" y="150" text-anchor="middle" transform="rotate(-90 20 150)">ρ（越上越密）</text>
+
+            <line class="d-drop" x1="154.4" y1="70" x2="70" y2="70"/>
+            <line class="d-drop" x1="154.4" y1="70" x2="154.4" y2="270"/>
+            <circle class="d-a" cx="154.4" cy="70" r="6"/>
+            <circle class="d-b" cx="379.4" cy="118" r="6"/>
+            <text class="d-label" x="166" y="60">A（L = 12，ρ = 2.50）</text>
+            <text class="d-warn" x="389" y="114">B（L = 44，ρ = 1.90）</text>
+            <text class="d-warn" x="389" y="130">在阴影里 → 被支配</text>
+          </svg>
+          <p class="figcap">阴影 = A 支配的区域。注意：A 的“更短”是优势，所以阴影向右扩展；“不更稀”要求密度不高于 A，所以阴影向下扩展。</p>
+        </div>
+
+        <div class="callout teal" style="margin-top:12px">
+          <span class="lbl">一句话</span>
+          <b>前沿 = 每一步的密度纪录。</b>被纪录压住的点全部丢弃；新纪录点成为下一格的比较基准。
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" id="build">
+    <div class="sec-head">
+      <div class="sec-idx">04</div>
+      <div>
+        <span class="kicker">construction · step by step</span>
+        <h2>构建过程：一趟扫描，维护一个分数</h2>
+        <p>下面用 10 个示意候选点走一遍（数值为说明构造过程而设，判定与代码一致）。每按一次“下一步”，处理一个点：先门控，再与当前纪录比密度。</p>
+      </div>
+    </div>
+
+    <div class="explorer">
+      <div class="chart-card">
+        <div class="chart-head">
+          <span class="chart-title">frontier / live</span>
+          <div class="seg" role="group" aria-label="切换坐标平面">
+            <button type="button" data-mode="obj" class="on">目标平面 (L, ρ)</button>
+            <button type="button" data-mode="cum">累计量平面 (L, r)</button>
+          </div>
+        </div>
+
+        <div class="strip-wrap">
+          <div class="strip" id="strip">
+            <div class="strip-span" id="stripSpan" style="left:87.5%;width:12.5%"><span id="stripLabel">L = 8</span></div>
+            <div class="strip-edge"></div>
+          </div>
+          <div class="strip-scale"><span>finish − 64</span><span>finish − 32</span><span>finish</span></div>
+          <div class="strip-hint" id="stripHint">右端固定，候选区间向左生长；每一格是一个 3-mer 位置。</div>
+        </div>
+
+        <div class="chart-wrap" id="chartWrap">
+          <svg id="chart" viewBox="0 0 820 480" role="img" aria-label="Pareto 前沿构建图：横轴区间长度，纵轴密度">
+            <defs>
+              <linearGradient id="frontierGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#37d6c0" stop-opacity=".24"/>
+                <stop offset="1" stop-color="#37d6c0" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <g id="gridLayer"></g>
+            <g id="areaLayer"></g>
+            <g id="thresholdLayer"></g>
+            <g id="frontierLayer"></g>
+            <g id="pointLayer"></g>
+          </svg>
+          <div class="tip" id="tip" role="status"></div>
+        </div>
+
+        <div class="legend">
+          <span><i class="keep"></i>保留（进入前沿）</span>
+          <span><i class="drop"></i>丢弃（被支配）</span>
+          <span><i class="ghost"></i>未处理</span>
+          <span><i class="thr"></i>门控线</span>
+        </div>
+        <div class="mode-note" id="modeNote">目标平面：x = L，y = ρ。台阶上的每个拐点都是一次密度纪录。</div>
+
+        <div class="controls">
+          <button class="btn" type="button" id="resetBtn" aria-label="重置">重置</button>
+          <button class="btn" type="button" id="prevBtn" aria-label="上一步">← 上一步</button>
+          <button class="btn primary" type="button" id="nextBtn" aria-label="下一步">下一步 →</button>
+          <button class="btn" type="button" id="playBtn" aria-label="自动播放">自动播放</button>
+          <span class="progress-mini" id="progressText">0 / 10</span>
+        </div>
+        <div class="strip-hint" style="margin-top:8px">也可以点图上的点，或点下方的表格行，直接跳到那一步。<kbd>←</kbd> <kbd>→</kbd> 可切换。</div>
+      </div>
+
+      <aside class="step-panel" aria-live="polite">
+        <div class="panel-top">
+          <span class="step-index" id="stepIndex">STEP 00 / 10</span>
+          <span class="badge idle" id="decisionBadge">待开始</span>
+        </div>
+        <div class="cand-title">候选 <span class="mono" id="candNo">#—</span></div>
+
+        <dl class="kv">
+          <dt>长度 L</dt><dd id="kvL">—</dd>
+          <dt>配对数 r</dt><dd id="kvR">—</dd>
+          <dt>密度 ρ</dt><dd id="kvD">—</dd>
+          <dt>纪录 ρ*</dt><dd id="kvBest">0.000 <small>初始 0/1</small></dd>
+        </dl>
+
+        <div class="formula" id="formula">—</div>
+        <p class="verdict" id="verdict">按“下一步”，从 L 最小的候选开始。每一步只做一次比较。</p>
+
+        <div class="record" id="record">
+          当前纪录：<b>0 / 1</b>　（ρ* = 0.000）
+        </div>
+
+        <div class="chips-wrap">
+          <div class="chips-lbl">当前前沿 <span id="frontierCount">0</span> 个点</div>
+          <div class="chips" id="frontierChips"><span class="chip empty">尚无</span></div>
+        </div>
+
+        <p class="panel-foot">
+          不变量：前沿按 L 递增，ρ 非降；当前纪录永远是最后一个保留点。
+          因此新点只需与它比较一次。
+        </p>
+      </aside>
+    </div>
+
+    <div class="table-card">
+      <div class="table-head">
+        <h3>逐步账本</h3>
+        <span>比较式：r × L* &nbsp;vs&nbsp; r* × L（交叉相乘，不做除法）</span>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th><th>L</th><th>r</th><th>ρ = r/L</th><th>处理前 ρ*</th><th>交叉相乘</th><th>结果</th>
+            </tr>
+          </thead>
+          <tbody id="stepTable"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="callout teal" style="margin-top:16px">
+      <span class="lbl">把这一步推广</span>
+      构建不需要看见整条前沿，也不需要排序所有候选。只要按长度递增扫描，维护<b>一个分数</b>，
+      每个点做一次交叉相乘，就能在线得到前沿——这正是 <code>find_perfect</code> 在窗口内做的事。
+    </div>
+
+    <div class="recap">
+      <div class="recap-lbl">the whole construction</div>
+      <div class="recap-flow">
+        <b>固定右端</b><span class="sep">→</span><b>向左枚举</b><span class="sep">→</span>
+        <b>增量算 (L, r)</b><span class="sep">→</span><b>门控 10r &gt; T·L</b><span class="sep">→</span>
+        <b>与 ρ* 比一次</b><span class="sep">→</span><b>保留则更新纪录</b>
+      </div>
+      <p>每一步保留的都是“在同样或更短的长度上，密度还没有被超越”的点；连起来，就是那条只能向右上走的台阶。</p>
+    </div>
+  </section>
+
+  <section class="sec" id="code">
+    <div class="sec-head">
+      <div class="sec-idx">05</div>
+      <div>
+        <span class="kicker">the actual code</span>
+        <h2>落到代码：一次循环，两个整数条件</h2>
+        <p><code>find_perfect</code> 的核心只有四件事：增量更新、候选门控、取当前纪录、交叉相乘后入列。</p>
+      </div>
+    </div>
+
+    <div class="code-card">
+      <div class="code-head">
+        <span class="file"><b>src/lib.rs</b> · find_perfect</span>
+        <span class="tagline">省略了插入位置 j、start_i 与部分类型转换</span>
+      </div>
+      <pre class="code"><code><span class="cm">// perfect 按 start 降序（等价于按长度 L 递增）保存候选</span>
+<span class="kw">for</span> i <span class="kw">in</span> (0..=size - window - 1).rev() {
+    <span class="cm">// ① 向左吃进一个 3-mer：长度 +1，配对数 O(1) 更新</span>
+    <span class="kw">let</span> word = sliding.ring.get(i <span class="kw">as</span> usize) <span class="kw">as</span> usize;
+    win_pairs += win_counts[word] <span class="kw">as</span> i64;
+    win_counts[word] += 1;
+    <span class="kw">let</span> new_win_pairs = win_pairs <span class="kw">as</span> u64;
+    <span class="kw">let</span> new_len = (size - i - 1) <span class="kw">as</span> u64;
+
+    <span class="cm">// ② 候选门控：10r &gt; T·L，等价于 ρ &gt; T/10；不满足就跳过</span>
+    <span class="kw">if</span> (new_win_pairs <span class="kw">as</span> i64) * 10 &lt;= total * new_len <span class="kw">as</span> i64 {
+        <span class="kw">continue</span>;
+    }
+
+    <span class="cm">// ③ 在所有“更短”的候选里取最高密度 r*/L*（最大值就是最后一个）</span>
+    <span class="kw">for</span> cur_perfect <span class="kw">in</span> &amp;perfect[..j] {
+        <span class="kw">if</span> cur_perfect.pairs <span class="kw">as</span> u64 * max_len &gt; max_pairs * cur_perfect.len <span class="kw">as</span> u64 {
+            max_pairs = cur_perfect.pairs <span class="kw">as</span> u64;
+            max_len = cur_perfect.len <span class="kw">as</span> u64;
+        }
+    }
+
+    <span class="cm">// ④ 密度不劣于纪录 → 入列；r × L* ≥ r* × L，避免除法与浮点</span>
+    <span class="kw">if</span> new_win_pairs * max_len &gt;= max_pairs * new_len {
+        max_pairs = new_win_pairs;
+        max_len = new_len;
+        perfect.insert(j, Perfect { start: start_i, finish, pairs: new_win_pairs <span class="kw">as</span> u32, len: new_len <span class="kw">as</span> u32 });
+    }
+}</code></pre>
+    </div>
+
+    <div class="split" style="margin-top:18px">
+      <div class="prose">
+        <h3>为什么用交叉相乘</h3>
+        <p>
+          比较 <span class="sym">r / L ≥ r* / L*</span>，两边乘以正数 <span class="sym">L·L*</span>，得到
+          <span class="sym">r × L* ≥ r* × L</span>。全程整数，没有除法、没有浮点误差，也没有除零特判。
+        </p>
+        <p>
+          纪录初始化为 <span class="sym">0 / 1</span>：任何正密度都会通过，所以第一个过门控的候选必然入列。
+          这正好是前沿的起点。
+        </p>
+      </div>
+      <div class="prose">
+        <h3>“更短”的范围</h3>
+        <p>
+          代码用 <code>partition_point(|p| p.start &gt;= start_i)</code> 找到插入点 <code>j</code>，
+          只扫描 <code>perfect[..j]</code>——也就是起点在当前点右侧、长度更短的那些候选。
+          更长的候选不可能支配当前点，无需比较。
+        </p>
+        <p>
+          在一次扫描内，已保留点的密度随长度非降，所以这份最大值其实就是最后一个保留点；
+          代码写成重算，是为了不依赖列表里可能残留的旧窗口区间，也不依赖这个单调性。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" id="edges">
+    <div class="sec-head">
+      <div class="sec-idx">06</div>
+      <div>
+        <span class="kicker">edges &amp; pitfalls</span>
+        <h2>六个容易踩的边界</h2>
+        <p>这些不是实现细节，而是“前沿到底是什么”的语义边界。</p>
+      </div>
+    </div>
+
+    <div class="edge-grid">
+      <div class="edge">
+        <div class="no">01 / UNIT</div>
+        <h4>L 是 3-mer 数，不是碱基</h4>
+        <p>前沿的横轴用 3-mer 个数；对应碱基跨度是 <b>L + 2</b>。阈值公式 <code>10r &gt; T·L</code> 也使用同一个 L，不要混用。</p>
+      </div>
+      <div class="edge">
+        <div class="no">02 / ORDER</div>
+        <h4>必须按 L 递增扫描</h4>
+        <p>从右向左，长度单调增加，才能只与“当前纪录”比较一次。乱序处理就必须与整条前沿比较，或者先排序。</p>
+      </div>
+      <div class="edge">
+        <div class="no">03 / TIES</div>
+        <h4>相等密度保留更长者</h4>
+        <p>代码用 <code>≥</code>，同密度下更长的点也入列。严格 Pareto 会去掉它；这里保留是为了覆盖更远，最终合并会处理嵌套。</p>
+      </div>
+      <div class="edge">
+        <div class="no">04 / GATE</div>
+        <h4>门控是严格大于</h4>
+        <p>候选要求 <code>10r &gt; T·L</code>，所以恰好等于 <code>T/10</code> 的点不会进入前沿。图上所有候选都严格在门控线之上。</p>
+      </div>
+      <div class="edge">
+        <div class="no">05 / SCOPE</div>
+        <h4>这是单窗口快照</h4>
+        <p>前沿只回答“这个窗口里哪些后缀是密度见证点”。窗口滑走后，点被确定、输出、与相邻区间合并，才成为最终 BED 区间。</p>
+      </div>
+      <div class="edge">
+        <div class="no">06 / FIRST</div>
+        <h4>第一个点必然保留</h4>
+        <p>纪录初始化为 <code>0/1</code>，任何正密度都满足 <code>r·1 ≥ 0·L</code>。因此第一个通过门控的候选就是台阶的起点。</p>
+      </div>
+    </div>
+
+    <div class="callout" style="margin-top:18px">
+      <span class="lbl">回到两条轴</span>
+      x 轴是 <b>长度 L</b>（越右越长，是代价）；y 轴是 <b>密度 ρ = r/L</b>（越上越密，是收益）。
+      前沿就是这两个目标下的非支配点集；构建它只需要一趟从左到右（按长度）的扫描，和一个不断被刷新的分数。
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="meta">
+      <a href="./sdust-explained.html">算法全貌</a>
+      <a href="./sdust-iterations.html#granularity">策略迭代 · perfect 提取</a>
+      <a href="#axes">回到坐标轴</a>
+    </div>
+    <div class="meta">symmetric DUST · perfect intervals · Pareto frontier</div>
+  </footer>
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  var CAND = [
+    { L: 8,  r: 18  },
+    { L: 12, r: 30  },
+    { L: 16, r: 36  },
+    { L: 20, r: 46  },
+    { L: 24, r: 63  },
+    { L: 28, r: 69  },
+    { L: 36, r: 99  },
+    { L: 44, r: 110 },
+    { L: 52, r: 147 },
+    { L: 64, r: 176 }
+  ];
+  var N = CAND.length;
+  var WIN = 64;
+  var THRESH = 2;
+
+  var steps = [];
+  (function () {
+    var br = 0, bl = 1;
+    for (var i = 0; i < N; i++) {
+      var c = CAND[i];
+      var lhs = c.r * bl;
+      var rhs = br * c.L;
+      var keep = lhs >= rhs;
+      steps.push({
+        i: i, L: c.L, r: c.r, d: c.r / c.L,
+        keep: keep, brBefore: br, blBefore: bl,
+        lhs: lhs, rhs: rhs,
+        cmp: c.r + '×' + bl + ' ' + (keep ? '≥' : '&lt;') + ' ' + br + '×' + c.L
+      });
+      if (keep) { br = c.r; bl = c.L; }
+    }
+  })();
+
+  var step = 0;
+  var mode = 'obj';
+  var timer = null;
+
+  var NS = 'http://www.w3.org/2000/svg';
+  var VW = 820, VH = 480;
+  var M = { l: 78, r: 30, t: 30, b: 64 };
+  var PW = VW - M.l - M.r;
+  var PH = VH - M.t - M.b;
+  var XMAX = 68;
+  var compact = false;
+
+  var svg = document.getElementById('chart');
+  var gridLayer = document.getElementById('gridLayer');
+  var areaLayer = document.getElementById('areaLayer');
+  var thresholdLayer = document.getElementById('thresholdLayer');
+  var frontierLayer = document.getElementById('frontierLayer');
+  var pointLayer = document.getElementById('pointLayer');
+  var tipEl = document.getElementById('tip');
+  var chartWrap = document.getElementById('chartWrap');
+
+  // 让 viewBox 的宽度等于实际 CSS 宽度：SVG 文字保持约 1:1 像素，
+  // 避免在窄屏上被整体缩小到看不清。
+  function measure() {
+    var w = Math.round(chartWrap.clientWidth || 820);
+    if (!w || w < 260) w = 820;
+    compact = w < 560;
+    VW = w;
+    VH = compact ? 400 : 480;
+    M = compact
+      ? { l: 52, r: 14, t: 26, b: 58 }
+      : { l: 78, r: 30, t: 30, b: 64 };
+    PW = VW - M.l - M.r;
+    PH = VH - M.t - M.b;
+    svg.setAttribute('viewBox', '0 0 ' + VW + ' ' + VH);
+  }
+
+  function ymax() { return mode === 'obj' ? 3.1 : 190; }
+  function sx(L) { return M.l + (L / XMAX) * PW; }
+  function sy(v) { return M.t + (1 - v / ymax()) * PH; }
+
+  function mk(tag, attrs, parent) {
+    var e = document.createElementNS(NS, tag);
+    if (attrs) {
+      for (var k in attrs) {
+        if (Object.prototype.hasOwnProperty.call(attrs, k)) e.setAttribute(k, attrs[k]);
+      }
+    }
+    (parent || svg).appendChild(e);
+    return e;
+  }
+  function clear(g) {
+    while (g.firstChild) g.removeChild(g.firstChild);
+  }
+  function txt(parent, attrs, s) {
+    var t = mk('text', attrs, parent);
+    t.textContent = s;
+    return t;
+  }
+
+  function renderGrid() {
+    clear(gridLayer);
+
+    var yticks = mode === 'obj'
+      ? [0, 0.5, 1, 1.5, 2, 2.5, 3]
+      : [0, 30, 60, 90, 120, 150, 180];
+
+    for (var yi = 0; yi < yticks.length; yi++) {
+      var v = yticks[yi];
+      var y = sy(v);
+      mk('line', { x1: M.l, x2: M.l + PW, y1: y, y2: y, 'class': 'gridline' }, gridLayer);
+      txt(gridLayer, { x: M.l - 12, y: y + 3.5, 'text-anchor': 'end', 'class': 'tick' },
+        mode === 'obj' ? v.toFixed(1) : String(v));
+    }
+
+    for (var L = 0; L <= 64; L += 8) {
+      var x = sx(L);
+      mk('line', { x1: x, x2: x, y1: M.t, y2: M.t + PH, 'class': 'gridline' }, gridLayer);
+      txt(gridLayer, { x: x, y: M.t + PH + 18, 'text-anchor': 'middle', 'class': 'tick' }, String(L));
+    }
+
+    mk('line', { x1: M.l, x2: M.l + PW, y1: M.t + PH, y2: M.t + PH, 'class': 'axis' }, gridLayer);
+    mk('line', { x1: M.l, x2: M.l, y1: M.t, y2: M.t + PH, 'class': 'axis' }, gridLayer);
+
+    txt(gridLayer, {
+      x: M.l + PW / 2,
+      y: VH - (compact ? 10 : 22),
+      'text-anchor': 'middle',
+      'class': 'axis-title'
+    }, '区间长度 L（3-mer 数）  →  越长');
+    var ytitle = mode === 'obj'
+      ? '密度 ρ = r / L  →  越密'
+      : '配对数 r（累计量，非判据）';
+    var yTitleX = compact ? 14 : 26;
+    txt(gridLayer, {
+      x: yTitleX, y: M.t + PH / 2, 'text-anchor': 'middle', 'class': 'axis-title',
+      transform: 'rotate(-90 ' + yTitleX + ' ' + (M.t + PH / 2) + ')'
+    }, ytitle);
+
+    txt(gridLayer, { x: M.l, y: M.t - 10, 'class': 'plane' },
+      mode === 'obj' ? 'TARGET PLANE  (L, ρ)' : 'CUMULATIVE PLANE  (L, r) — ρ 是斜率');
+  }
+
+  function renderThreshold() {
+    clear(thresholdLayer);
+    if (mode === 'obj') {
+      var y = sy(THRESH);
+      mk('line', { x1: M.l, x2: M.l + PW, y1: y, y2: y, 'class': 'thr' }, thresholdLayer);
+      txt(thresholdLayer, { x: M.l + PW - 4, y: y - 8, 'text-anchor': 'end', 'class': 'thr-label' },
+        '候选门控  ρ = T/10 = 2');
+    } else {
+      mk('line', {
+        x1: sx(0), y1: sy(0), x2: sx(XMAX), y2: sy(THRESH * XMAX), 'class': 'thr'
+      }, thresholdLayer);
+      txt(thresholdLayer, { x: sx(56), y: sy(THRESH * 56) - 8, 'class': 'thr-label' },
+        '门控斜率 ρ = 2');
+    }
+  }
+
+  function renderFrontier() {
+    clear(areaLayer);
+    clear(frontierLayer);
+
+    var accepted = [];
+    for (var i = 0; i < step; i++) if (steps[i].keep) accepted.push(steps[i]);
+    if (!accepted.length) return;
+
+    var limit = steps[step - 1].L;
+
+    if (mode === 'obj') {
+      var first = accepted[0];
+      var d = 'M ' + sx(first.L) + ' ' + sy(first.d);
+      for (var j = 1; j < accepted.length; j++) {
+        d += ' H ' + sx(accepted[j].L) + ' V ' + sy(accepted[j].d);
+      }
+      var last = accepted[accepted.length - 1];
+      var endL = Math.max(limit, last.L);
+      if (endL > last.L) d += ' H ' + sx(endL);
+
+      mk('path', { d: d, 'class': 'frontier-line' }, frontierLayer);
+
+      var areaD = d + ' L ' + sx(endL) + ' ' + sy(0) +
+                  ' L ' + sx(first.L) + ' ' + sy(0) + ' Z';
+      mk('path', { d: areaD, 'class': 'frontier-fill', fill: 'url(#frontierGrad)' }, areaLayer);
+    } else {
+      for (var k = 0; k < accepted.length; k++) {
+        var s = accepted[k];
+        var isLast = k === accepted.length - 1;
+        var x2 = XMAX;
+        var y2 = s.d * XMAX;
+        if (y2 > ymax()) { y2 = ymax(); x2 = y2 / s.d; }
+        mk('line', {
+          x1: sx(0), y1: sy(0), x2: sx(x2), y2: sy(y2),
+          'class': isLast ? 'ray ray-last' : 'ray'
+        }, frontierLayer);
+      }
+      var best = accepted[accepted.length - 1];
+      var lx = Math.min(XMAX, ymax() / best.d);
+      txt(frontierLayer, {
+        x: sx(lx) - 6, y: sy(best.d * lx) - 10,
+        'text-anchor': 'end', 'class': 'ray-label'
+      }, '当前纪录斜率 = ' + best.d.toFixed(3));
+    }
+  }
+
+  function showTip(ev, s, idx) {
+    var rect = chartWrap.getBoundingClientRect();
+    var processed = idx < step;
+    var dec = processed ? (s.keep ? '<span class="tip-keep">保留</span>' : '<span class="tip-drop">丢弃</span>')
+                        : '<span class="tip-idle">未处理</span>';
+    tipEl.innerHTML = '<b>#' + String(idx + 1).padStart(2, '0') + '</b>　L = ' + s.L +
+      '<br>r = ' + s.r + '　ρ = ' + s.d.toFixed(3) +
+      '<br>' + dec;
+    tipEl.style.left = (ev.clientX - rect.left) + 'px';
+    tipEl.style.top = (ev.clientY - rect.top) + 'px';
+    tipEl.classList.add('on');
+  }
+  function hideTip() { tipEl.classList.remove('on'); }
+
+  function renderPoints() {
+    clear(pointLayer);
+
+    for (var i = 0; i < N; i++) {
+      var s = steps[i];
+      var x = sx(s.L);
+      var y = sy(mode === 'obj' ? s.d : s.r);
+      var g = mk('g', { 'class': 'pt', 'data-i': i }, pointLayer);
+
+      if (i >= step) {
+        mk('circle', { cx: x, cy: y, r: 4.2, 'class': 'pt-ghost' }, g);
+      } else if (s.keep) {
+        mk('circle', { cx: x, cy: y, r: 10, 'class': 'pt-halo' }, g);
+        mk('circle', { cx: x, cy: y, r: 5.6, 'class': 'pt-keep' }, g);
+        txt(g, {
+          x: x, y: y - 13,
+          'text-anchor': (s.L > 56 ? 'end' : 'middle'),
+          'class': 'pt-label'
+        }, mode === 'obj' ? s.d.toFixed(2) : String(s.r));
+      } else {
+        mk('line', { x1: x - 5, y1: y - 5, x2: x + 5, y2: y + 5, 'class': 'pt-drop' }, g);
+        mk('line', { x1: x - 5, y1: y + 5, x2: x + 5, y2: y - 5, 'class': 'pt-drop' }, g);
+        txt(g, {
+          x: x, y: y + 16,
+          'text-anchor': (s.L > 56 ? 'end' : 'middle'),
+          'class': 'pt-drop-label'
+        }, mode === 'obj' ? s.d.toFixed(2) : String(s.r));
+      }
+
+      if (i === step - 1) {
+        mk('circle', { cx: x, cy: y, r: 11, 'class': 'pt-now' }, g);
+        mk('line', { x1: x, y1: y + 11, x2: x, y2: sy(0), 'class': 'drop-line' }, g);
+      }
+
+      (function (idx, data) {
+        g.addEventListener('mouseenter', function (ev) { showTip(ev, data, idx); });
+        g.addEventListener('mousemove', function (ev) { showTip(ev, data, idx); });
+        g.addEventListener('mouseleave', hideTip);
+        g.addEventListener('click', function () { stopPlay(); setStep(idx + 1); });
+      })(i, s);
+    }
+  }
+
+  function renderChart() {
+    renderGrid();
+    renderThreshold();
+    renderFrontier();
+    renderPoints();
+  }
+
+  function renderPanel() {
+    var badge = document.getElementById('decisionBadge');
+    var stepIndex = document.getElementById('stepIndex');
+    var candNo = document.getElementById('candNo');
+    var kvL = document.getElementById('kvL');
+    var kvR = document.getElementById('kvR');
+    var kvD = document.getElementById('kvD');
+    var kvBest = document.getElementById('kvBest');
+    var formula = document.getElementById('formula');
+    var verdict = document.getElementById('verdict');
+    var record = document.getElementById('record');
+    var chips = document.getElementById('frontierChips');
+    var count = document.getElementById('frontierCount');
+
+    stepIndex.textContent = 'STEP ' + String(step).padStart(2, '0') + ' / ' + N;
+
+    if (step === 0) {
+      badge.className = 'badge idle';
+      badge.textContent = '待开始';
+      candNo.textContent = '#—';
+      kvL.textContent = '—';
+      kvR.textContent = '—';
+      kvD.textContent = '—';
+      kvBest.innerHTML = '0.000 <small>初始 0/1</small>';
+      formula.textContent = '—';
+      verdict.innerHTML = '按“下一步”，从 L 最小的候选开始。每一步只做一次比较。';
+      record.innerHTML = '当前纪录：<b>0 / 1</b>　（ρ* = 0.000）';
+      chips.innerHTML = '<span class="chip empty">尚无</span>';
+      count.textContent = '0';
+      return;
+    }
+
+    var s = steps[step - 1];
+    var bestD = s.brBefore === 0 ? 0 : s.brBefore / s.blBefore;
+
+    badge.className = 'badge ' + (s.keep ? 'keep' : 'drop');
+    badge.textContent = s.keep ? '保留' : '丢弃';
+    candNo.textContent = '#' + String(s.i + 1).padStart(2, '0');
+    kvL.textContent = s.L;
+    kvR.textContent = s.r;
+    kvD.textContent = s.d.toFixed(3);
+    kvBest.innerHTML = bestD.toFixed(3) +
+      ' <small>' + (s.brBefore === 0 ? '初始 0/1' : 'r* = ' + s.brBefore + ', L* = ' + s.blBefore) + '</small>';
+
+    var op = s.keep ? '≥' : '&lt;';
+    formula.innerHTML =
+      s.r + ' × ' + s.blBefore + ' = <span class="' + (s.keep ? 'ok' : 'bad') + '">' + s.lhs + '</span>' +
+      ' &nbsp;' + op + '&nbsp; ' +
+      s.brBefore + ' × ' + s.L + ' = <span class="' + (s.keep ? 'ok' : 'bad') + '">' + s.rhs + '</span>' +
+      '<br><span style="color:var(--dim2)">' + s.r + '/' + s.L + ' ' + (s.keep ? '≥' : '<') + ' ' +
+      (s.brBefore === 0 ? '0' : s.brBefore + '/' + s.blBefore) + '</span>';
+
+    if (s.keep) {
+      verdict.innerHTML =
+        '密度 <b class="ok">' + s.d.toFixed(3) + '</b> 不低于当前纪录 <b>' + bestD.toFixed(3) + '</b>：' +
+        '保留，前沿向右上延长一格；纪录更新为 <b>' + s.r + ' / ' + s.L + '</b>。';
+      record.innerHTML = '当前纪录：<b>' + s.r + ' / ' + s.L + '</b>　（ρ* = ' + s.d.toFixed(3) + '）' +
+        '<br>比上一纪录提高 ' + (bestD === 0 ? '—' : '+' + (s.d - bestD).toFixed(3));
+    } else {
+      verdict.innerHTML =
+        '密度 <b class="bad">' + s.d.toFixed(3) + '</b> 低于当前纪录 <b>' + bestD.toFixed(3) + '</b>：' +
+        '被 <b>(L = ' + s.blBefore + ', ρ = ' + bestD.toFixed(3) + ')</b> 支配——它更短且不更稀。丢弃。';
+      record.innerHTML = '当前纪录不变：<b>' + s.brBefore + ' / ' + s.blBefore + '</b>　（ρ* = ' + bestD.toFixed(3) + '）';
+    }
+
+    var accepted = [];
+    for (var i = 0; i < step; i++) if (steps[i].keep) accepted.push(steps[i]);
+    count.textContent = String(accepted.length);
+    if (accepted.length) {
+      chips.innerHTML = accepted.map(function (a) {
+        return '<span class="chip" title="ρ = ' + a.d.toFixed(3) + '">L' + a.L + '</span>';
+      }).join('');
+    } else {
+      chips.innerHTML = '<span class="chip empty">尚无</span>';
+    }
+  }
+
+  function renderTable() {
+    var rows = document.querySelectorAll('#stepTable tr');
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      var done = i < step;
+      row.classList.toggle('future', !done);
+      row.classList.toggle('current', i === step - 1);
+      row.classList.toggle('kept', done && steps[i].keep);
+      row.classList.toggle('dropped', done && !steps[i].keep);
+
+      var cmpCell = row.querySelector('.cmp');
+      var resCell = row.querySelector('.res');
+      if (cmpCell) cmpCell.innerHTML = done ? steps[i].cmp : '—';
+      if (resCell) {
+        resCell.innerHTML = done
+          ? '<span class="pill ' + (steps[i].keep ? 'keep' : 'drop') + '">' +
+            (steps[i].keep ? '保留' : '丢弃') + '</span>'
+          : '<span class="pill" style="color:var(--dim2);border-color:var(--line)">—</span>';
+      }
+    }
+  }
+
+  function renderStrip() {
+    var span = document.getElementById('stripSpan');
+    var label = document.getElementById('stripLabel');
+    var hint = document.getElementById('stripHint');
+
+    if (step === 0) {
+      span.style.opacity = '0';
+      span.style.left = '0%';
+      span.style.width = '0%';
+      label.textContent = '';
+      hint.textContent = '右端固定，候选区间向左生长；每一格是一个 3-mer 位置。';
+      return;
+    }
+
+    var s = steps[step - 1];
+    span.style.opacity = '1';
+    span.style.left = ((WIN - s.L) / WIN * 100) + '%';
+    span.style.width = (s.L / WIN * 100) + '%';
+    span.classList.toggle('reject', !s.keep);
+    label.textContent = 'L = ' + s.L + ' · r = ' + s.r;
+    hint.textContent = s.keep
+      ? '这个区间留在前沿里：密度 ' + s.d.toFixed(3) + ' 刷新或追平了纪录。'
+      : '这个区间被丢弃：更短的候选已经有不低于它的密度。';
+  }
+
+  function renderControls() {
+    document.getElementById('prevBtn').disabled = step === 0;
+    document.getElementById('nextBtn').disabled = step === N;
+    document.getElementById('progressText').textContent = step + ' / ' + N;
+  }
+
+  function render() {
+    renderChart();
+    renderPanel();
+    renderTable();
+    renderStrip();
+    renderControls();
+  }
+
+  function setStep(n) {
+    step = Math.max(0, Math.min(N, n));
+    render();
+  }
+
+  function stopPlay() {
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+      document.getElementById('playBtn').textContent = '自动播放';
+    }
+  }
+
+  function togglePlay() {
+    if (timer) { stopPlay(); return; }
+    if (step >= N) setStep(0);
+    var btn = document.getElementById('playBtn');
+    btn.textContent = '暂停';
+    timer = setInterval(function () {
+      if (step >= N) { stopPlay(); return; }
+      setStep(step + 1);
+    }, 1250);
+  }
+
+  function buildTable() {
+    var tbody = document.getElementById('stepTable');
+    var html = '';
+    for (var i = 0; i < N; i++) {
+      var s = steps[i];
+      var before = s.brBefore === 0 ? '0.000' : (s.brBefore / s.blBefore).toFixed(3);
+      html += '<tr data-i="' + i + '">' +
+        '<td>' + String(i + 1).padStart(2, '0') + '</td>' +
+        '<td>' + s.L + '</td>' +
+        '<td>' + s.r + '</td>' +
+        '<td>' + s.d.toFixed(3) + '</td>' +
+        '<td>' + before + '</td>' +
+        '<td class="cmp">' + s.cmp + '</td>' +
+        '<td class="res"><span class="pill ' + (s.keep ? 'keep' : 'drop') + '">' + (s.keep ? '保留' : '丢弃') + '</span></td>' +
+        '</tr>';
+    }
+    tbody.innerHTML = html;
+
+    tbody.addEventListener('click', function (ev) {
+      var tr = ev.target.closest ? ev.target.closest('tr') : null;
+      if (!tr || !tr.dataset || tr.dataset.i === undefined) return;
+      stopPlay();
+      setStep(parseInt(tr.dataset.i, 10) + 1);
+    });
+  }
+
+  function buildModeButtons() {
+    var buttons = document.querySelectorAll('[data-mode]');
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].addEventListener('click', function () {
+        mode = this.getAttribute('data-mode');
+        for (var j = 0; j < buttons.length; j++) {
+          buttons[j].classList.toggle('on', buttons[j] === this);
+        }
+        document.getElementById('modeNote').textContent = mode === 'obj'
+          ? '目标平面：x = L，y = ρ。台阶上的每个拐点都是一次密度纪录。'
+          : '累计量平面：x = L，y = r。ρ 是原点连线的斜率；保留的仍是斜率纪录点，两图是同一批点。';
+        renderChart();
+      });
+    }
+  }
+
+  document.getElementById('prevBtn').addEventListener('click', function () { stopPlay(); setStep(step - 1); });
+  document.getElementById('nextBtn').addEventListener('click', function () { stopPlay(); setStep(step + 1); });
+  document.getElementById('resetBtn').addEventListener('click', function () { stopPlay(); setStep(0); });
+  document.getElementById('playBtn').addEventListener('click', togglePlay);
+
+  document.addEventListener('keydown', function (ev) {
+    var t = ev.target;
+    if (t && t.matches && t.matches('input, textarea, select, button, a')) return;
+    if (ev.key === 'ArrowRight') { ev.preventDefault(); stopPlay(); setStep(step + 1); }
+    if (ev.key === 'ArrowLeft') { ev.preventDefault(); stopPlay(); setStep(step - 1); }
+  });
+
+  buildTable();
+  buildModeButtons();
+  measure();
+  render();
+
+  var resizeTimer = null;
+  window.addEventListener('resize', function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () {
+      measure();
+      renderChart();
+    }, 150);
+  });
+
+  // 顶部进度条
+  var bar = document.getElementById('progressBar');
+  function onScroll() {
+    var doc = document.documentElement;
+    var max = doc.scrollHeight - doc.clientHeight;
+    bar.style.width = (max > 0 ? (doc.scrollTop / max) * 100 : 0) + '%';
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  // 导航高亮
+  var navLinks = [].slice.call(document.querySelectorAll('.navlinks a'));
+  var sections = navLinks.map(function (a) {
+    return document.querySelector(a.getAttribute('href'));
+  }).filter(Boolean);
+  if ('IntersectionObserver' in window) {
+    var obs = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        var id = '#' + en.target.id;
+        navLinks.forEach(function (a) {
+          a.classList.toggle('active', a.getAttribute('href') === id);
+        });
+      });
+    }, { rootMargin: '-20% 0px -65% 0px', threshold: 0 });
+    sections.forEach(function (s) { obs.observe(s); });
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1372 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="sdust：symmetric DUST 算法的 Rust 移植。交互式解释它解决了什么问题、如何用 3-mer 滚动窗口与配对计数在一次线性扫描中找出低复杂度 DNA 区域，以及为什么这样做能成立。">
+<meta name="theme-color" content="#070a0f">
+<title>sdust · 低复杂度 DNA 区域检测，为什么这样做才成立</title>
+<style>
+:root{
+  --bg:#070a0f;
+  --bg-soft:#0b1017;
+  --panel:#0e141c;
+  --panel-2:#111924;
+  --line:#1d2833;
+  --line-soft:#16202a;
+  --ink:#e7eef6;
+  --dim:#93a4b8;
+  --dim2:#63758a;
+  --teal:#37d6c0;
+  --teal-soft:rgba(55,214,192,.12);
+  --violet:#a78bfa;
+  --amber:#f0b354;
+  --red:#f4756b;
+  --mono:"JetBrains Mono","SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:"Inter",system-ui,-apple-system,"Segoe UI","PingFang SC","Hiragino Sans GB","Noto Sans SC",sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  -webkit-font-smoothing:antialiased;line-height:1.65;font-size:16px;
+  overflow-x:hidden;
+}
+body::before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:
+    radial-gradient(900px 520px at 12% -8%,rgba(55,214,192,.10),transparent 60%),
+    radial-gradient(760px 480px at 92% 4%,rgba(167,139,250,.09),transparent 60%),
+    radial-gradient(600px 400px at 50% 100%,rgba(240,179,84,.05),transparent 65%);
+}
+body::after{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.28;
+  background-image:linear-gradient(rgba(255,255,255,.022) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.022) 1px,transparent 1px);
+  background-size:64px 64px;
+  mask-image:radial-gradient(circle at 50% 20%,#000 0%,transparent 75%);
+}
+a{color:var(--teal);text-decoration:none}
+::selection{background:rgba(55,214,192,.28)}
+
+/* ---------- top bar ---------- */
+.progress-track{position:fixed;top:0;left:0;right:0;height:2px;background:transparent;z-index:60}
+.progress-bar{height:100%;width:0;background:linear-gradient(90deg,var(--teal),var(--violet));box-shadow:0 0 12px rgba(55,214,192,.6)}
+.topbar{
+  position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);
+  background:rgba(7,10,15,.76);border-bottom:1px solid var(--line-soft);
+}
+.topbar-inner{max-width:1120px;margin:0 auto;padding:12px 24px;display:flex;align-items:center;gap:22px}
+.brand{display:flex;align-items:baseline;gap:9px;font-family:var(--mono);font-size:14px;letter-spacing:.02em}
+.brand b{font-weight:600;color:var(--ink)}
+.brand span{color:var(--dim2);font-size:11px;letter-spacing:.12em;text-transform:uppercase}
+.navlinks{display:flex;gap:6px;margin-left:auto;flex-wrap:wrap}
+.navlinks a{
+  color:var(--dim);font-size:13px;padding:6px 11px;border-radius:8px;border:1px solid transparent;
+  transition:.2s cubic-bezier(.4,0,.2,1);
+}
+.navlinks a:hover{color:var(--ink);background:var(--panel);border-color:var(--line)}
+.navlinks a.active{color:var(--teal);background:var(--teal-soft);border-color:rgba(55,214,192,.25)}
+
+main{position:relative;z-index:1;max-width:1120px;margin:0 auto;padding:0 24px 100px}
+section{scroll-margin-top:86px}
+
+/* ---------- hero ---------- */
+.hero{padding:84px 0 40px}
+.eyebrow{
+  font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;
+  color:var(--teal);display:flex;align-items:center;gap:10px;margin:0 0 22px;
+}
+.eyebrow::before{content:"";width:26px;height:1px;background:linear-gradient(90deg,var(--teal),transparent)}
+h1{
+  font-size:clamp(27px,4.2vw,45px);line-height:1.2;letter-spacing:-.025em;font-weight:650;
+  margin:0 0 22px;max-width:920px;
+}
+h1 .nw,h1 .g{white-space:nowrap}
+h1 .g{
+  background:linear-gradient(100deg,#8ef4e4,#37d6c0 40%,#a78bfa 88%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.lede{font-size:clamp(15px,1.8vw,18px);color:var(--dim);max-width:720px;margin:0 0 44px}
+.lede code{font-family:var(--mono);font-size:.9em;color:var(--ink);background:var(--panel);padding:1px 6px;border-radius:5px;border:1px solid var(--line)}
+
+.qgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.qcard{
+  display:block;text-align:left;background:linear-gradient(170deg,var(--panel-2),var(--bg-soft));
+  border:1px solid var(--line);border-radius:14px;padding:20px 20px 18px;color:inherit;
+  cursor:pointer;transition:.25s;position:relative;overflow:hidden;font:inherit;
+}
+.qcard::after{
+  content:"";position:absolute;left:0;right:0;top:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(55,214,192,.5),transparent);opacity:0;transition:.3s;
+}
+.qcard:hover{transform:translateY(-3px);border-color:#2a3a49;background:linear-gradient(170deg,#131c27,#0c121a)}
+.qcard:hover::after{opacity:1}
+.qcard .num{font-family:var(--mono);font-size:11px;color:var(--teal);letter-spacing:.14em}
+.qcard h3{margin:10px 0 6px;font-size:16.5px;letter-spacing:-.01em;font-weight:600}
+.qcard p{margin:0;font-size:13.5px;color:var(--dim);line-height:1.55}
+.qcard .arrow{margin-top:14px;font-family:var(--mono);font-size:12px;color:var(--dim2);transition:.25s}
+.qcard:hover .arrow{color:var(--teal);transform:translateX(3px)}
+
+/* ---------- section shell ---------- */
+.sec{padding:64px 0 8px}
+.sec-head{display:flex;gap:18px;align-items:flex-start;margin-bottom:26px}
+.sec-idx{
+  font-family:var(--mono);font-size:12px;color:var(--dim2);padding-top:8px;min-width:34px;
+  border-top:1px solid var(--line);letter-spacing:.08em;
+}
+.sec-head h2{margin:0 0 8px;font-size:clamp(23px,3vw,31px);letter-spacing:-.02em;font-weight:640;line-height:1.3}
+.sec-head p{margin:0;color:var(--dim);max-width:760px;font-size:15px}
+.sec-head .kicker{font-family:var(--mono);font-size:11px;letter-spacing:.16em;color:var(--violet);text-transform:uppercase;display:block;margin-bottom:8px}
+
+/* ---------- generic panel ---------- */
+.panel{
+  background:linear-gradient(180deg,var(--panel),var(--bg-soft));
+  border:1px solid var(--line);border-radius:16px;padding:24px;
+}
+.panel.tight{padding:18px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.card{
+  background:linear-gradient(180deg,var(--panel),var(--bg-soft));
+  border:1px solid var(--line);border-radius:14px;padding:20px;
+}
+.card h4{margin:0 0 8px;font-size:14.5px;font-weight:600;letter-spacing:-.005em}
+.card h4 .dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--teal);margin-right:8px;vertical-align:2px}
+.card p{margin:0;font-size:13.5px;color:var(--dim);line-height:1.62}
+.card p + p{margin-top:9px}
+.mono{font-family:var(--mono)}
+.hl{color:var(--ink)}
+.dim{color:var(--dim)}
+.tag{
+  display:inline-block;font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:99px;
+  border:1px solid var(--line);color:var(--dim);background:rgba(255,255,255,.02);
+}
+.tag.teal{color:var(--teal);border-color:rgba(55,214,192,.3);background:var(--teal-soft)}
+.tag.red{color:var(--red);border-color:rgba(244,117,107,.3);background:rgba(244,117,107,.1)}
+.tag.amber{color:var(--amber);border-color:rgba(240,179,84,.3);background:rgba(240,179,84,.1)}
+.tag.violet{color:var(--violet);border-color:rgba(167,139,250,.3);background:rgba(167,139,250,.1)}
+
+/* ---------- sequence strip ---------- */
+.strip{
+  font-family:var(--mono);font-size:13px;line-height:1.9;word-break:break-all;
+  letter-spacing:.06em;background:#080d13;border:1px solid var(--line-soft);border-radius:10px;
+  padding:14px 16px;color:#8fa3b8;
+}
+.strip .lc{color:#ffd5d1;background:rgba(244,117,107,.24);border-radius:2px;box-shadow:inset 0 -1px 0 rgba(244,117,107,.55)}
+.strip .n{color:var(--dim2)}
+.strip .cur{color:#0a0f14;background:var(--amber);border-radius:2px;box-shadow:0 0 0 2px rgba(240,179,84,.3)}
+.strip .win{background:rgba(55,214,192,.16);color:#cdeee8;border-radius:2px}
+.strip .done{color:var(--dim2)}
+.strip .gap{display:inline-block;width:10px}
+
+/* ---------- toggle ---------- */
+.switch{display:inline-flex;align-items:center;gap:10px;cursor:pointer;user-select:none;font-size:13px;color:var(--dim)}
+.switch input{position:absolute;opacity:0;pointer-events:none}
+.switch .track{
+  width:38px;height:21px;border-radius:99px;background:#1a2531;border:1px solid var(--line);
+  position:relative;transition:.22s;
+}
+.switch .track::after{
+  content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;
+  background:var(--dim);transition:.22s;
+}
+.switch input:checked + .track{background:rgba(55,214,192,.25);border-color:rgba(55,214,192,.55)}
+.switch input:checked + .track::after{left:18px;background:var(--teal)}
+
+/* ---------- stats ---------- */
+.stats{display:flex;gap:26px;flex-wrap:wrap;margin-top:16px}
+.stats.sgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px 20px}
+.stat .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim2);line-height:1.4}
+.stat .v{font-family:var(--mono);font-size:24px;color:var(--ink);font-variant-numeric:tabular-nums;line-height:1.3;transition:.1s;min-height:31px}
+.stat .v.small{font-size:17px;color:var(--teal)}
+.stat .v.red{color:var(--red)}
+
+/* ---------- pipeline ---------- */
+.pipe{display:flex;flex-direction:column;gap:8px}
+.pipe-step{
+  display:grid;grid-template-columns:42px 1fr auto;gap:14px;align-items:center;
+  background:linear-gradient(90deg,var(--panel),var(--bg-soft));
+  border:1px solid var(--line);border-radius:11px;padding:13px 16px;cursor:pointer;
+  transition:.18s;text-align:left;font:inherit;color:inherit;width:100%;
+}
+.pipe-step:hover{border-color:#2b3b4a;transform:translateX(2px)}
+.pipe-step.on{border-color:rgba(55,214,192,.45);background:linear-gradient(90deg,rgba(55,214,192,.09),var(--bg-soft))}
+.pipe-step .idx{font-family:var(--mono);font-size:11px;color:var(--dim2)}
+.pipe-step.on .idx{color:var(--teal)}
+.pipe-step .t{font-size:14px;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.pipe-step .c{font-family:var(--mono);font-size:11px;color:var(--dim2);white-space:nowrap}
+.pipe-detail{
+  margin-top:6px;border:1px dashed var(--line);border-radius:11px;padding:16px 18px;
+  font-size:13.5px;color:var(--dim);min-height:96px;background:rgba(255,255,255,.012);
+}
+.pipe-detail b{color:var(--ink);font-weight:600}
+.pipe-detail .mono{font-size:12.5px;color:var(--teal)}
+
+/* ---------- controls ---------- */
+.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:16px 0 0}
+button{
+  font:inherit;font-size:13px;padding:8px 14px;border-radius:9px;cursor:pointer;
+  background:var(--panel-2);color:var(--ink);border:1px solid var(--line);transition:.18s;
+}
+button:hover{border-color:#31424f;background:#16202b}
+button.primary{background:linear-gradient(180deg,rgba(55,214,192,.22),rgba(55,214,192,.1));border-color:rgba(55,214,192,.45);color:#a9f3e8}
+button.primary:hover{background:linear-gradient(180deg,rgba(55,214,192,.3),rgba(55,214,192,.14))}
+button:disabled{opacity:.4;cursor:not-allowed}
+button.icon{min-width:40px;padding:8px 10px;font-family:var(--mono)}
+
+input[type=range]{
+  -webkit-appearance:none;appearance:none;height:3px;border-radius:99px;background:#233040;
+  outline:none;flex:1;min-width:90px;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--teal);
+  border:2px solid #0a1117;cursor:pointer;box-shadow:0 0 0 3px rgba(55,214,192,.15);
+}
+input[type=range]::-moz-range-thumb{
+  width:12px;height:12px;border-radius:50%;background:var(--teal);border:2px solid #0a1117;cursor:pointer;
+}
+.slider-row{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--dim);font-family:var(--mono)}
+.slider-row .lbl{min-width:52px;color:var(--dim2)}
+.slider-row output{min-width:34px;text-align:right;color:var(--teal)}
+
+/* ---------- score bar ---------- */
+.bar-outer{height:8px;background:#131c26;border-radius:99px;overflow:hidden;border:1px solid var(--line);position:relative}
+.bar-inner{height:100%;width:0;background:linear-gradient(90deg,var(--teal),#7ee7d8);transition:width .12s linear}
+.bar-inner.hot{background:linear-gradient(90deg,var(--amber),var(--red))}
+.bar-label{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;color:var(--dim2);margin-top:6px}
+
+/* ---------- timeline ---------- */
+.timeline{display:flex;align-items:flex-end;gap:1px;height:56px;margin-top:14px;padding:0 2px;border-bottom:1px solid var(--line-soft);position:relative}
+.timeline::after{
+  content:"";position:absolute;left:0;right:0;bottom:45%;pointer-events:none;
+  border-top:1px dashed rgba(240,179,84,.3);
+}
+.timeline .b{flex:1;min-width:1px;background:#1d2a36;border-radius:1px 1px 0 0;transition:background .1s,height .1s;position:relative;z-index:1}
+.timeline .b.on{background:rgba(55,214,192,.55)}
+.timeline .b.hot{background:var(--red)}
+.timeline .b.cursor{background:var(--amber);box-shadow:0 0 6px rgba(240,179,84,.8)}
+
+/* ---------- word table ---------- */
+.wordrows{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+.wordrow{display:grid;grid-template-columns:58px 1fr 34px;gap:10px;align-items:center;font-family:var(--mono);font-size:12px}
+.wordrow .w{color:var(--violet);letter-spacing:.1em}
+.wordrow .c{color:var(--dim2);text-align:right;font-variant-numeric:tabular-nums}
+.wordrow .mini{height:6px;background:#131c26;border-radius:99px;overflow:hidden}
+.wordrow .mini i{display:block;height:100%;background:linear-gradient(90deg,rgba(167,139,250,.5),var(--violet));border-radius:99px;transition:width .12s}
+
+/* ---------- code ---------- */
+.tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:-1px}
+.tabs button{
+  border-radius:9px 9px 0 0;border-bottom-color:transparent;background:transparent;color:var(--dim);
+  font-family:var(--mono);font-size:12px;padding:8px 12px;
+}
+.tabs button.on{background:#080d13;color:var(--teal);border-color:var(--line);border-bottom-color:#080d13}
+pre.code{
+  margin:0;background:#080d13;border:1px solid var(--line);border-radius:0 12px 12px 12px;
+  padding:18px;overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.75;color:#c3d3e2;
+}
+pre.code .k{color:#ff9ecb}
+pre.code .f{color:#7fd3ff}
+pre.code .c{color:#54677a;font-style:italic}
+pre.code .n{color:#f0b354}
+pre.code .s{color:#9ae6a8}
+.code-note{font-size:12px;color:var(--dim2);margin-top:10px;font-family:var(--mono)}
+
+/* ---------- table ---------- */
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line-soft)}
+th{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim2);font-weight:500}
+td.mono{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--ink);font-size:12.5px}
+tr:last-child td{border-bottom:none}
+
+/* ---------- perf ---------- */
+.perf-row{margin-bottom:16px}
+.perf-row .top{display:flex;justify-content:space-between;font-size:12.5px;color:var(--dim);margin-bottom:7px;font-family:var(--mono)}
+.perf-row .top b{color:var(--ink);font-weight:500}
+.perf-bars{display:flex;flex-direction:column;gap:4px}
+.perf-bar{height:9px;border-radius:99px;width:0;transition:width 1s cubic-bezier(.2,.8,.2,1)}
+.perf-bar.c{background:linear-gradient(90deg,#37475a,#5b7188)}
+.perf-bar.rs{background:linear-gradient(90deg,rgba(55,214,192,.45),var(--teal));box-shadow:0 0 14px rgba(55,214,192,.25)}
+.legend{display:flex;gap:16px;font-size:11.5px;color:var(--dim2);font-family:var(--mono);margin-top:14px}
+.legend i{display:inline-block;width:14px;height:6px;border-radius:99px;vertical-align:1px;margin-right:6px}
+
+/* ---------- checklist ---------- */
+.checks{display:flex;flex-direction:column;gap:10px}
+.check{display:flex;gap:11px;align-items:flex-start;font-size:13.5px;color:var(--dim)}
+.check .ok{color:var(--teal);font-family:var(--mono);flex:none}
+.check b{color:var(--ink);font-weight:500}
+
+/* ---------- lab ---------- */
+textarea{
+  width:100%;min-height:112px;resize:vertical;background:#080d13;border:1px solid var(--line);
+  border-radius:10px;padding:14px;color:#c3d3e2;font-family:var(--mono);font-size:12.5px;
+  line-height:1.75;outline:none;transition:.18s;
+}
+textarea:focus{border-color:rgba(55,214,192,.45);box-shadow:0 0 0 3px rgba(55,214,192,.08)}
+.regions{max-height:190px;overflow:auto;margin-top:4px}
+.regions::-webkit-scrollbar{width:6px}
+.regions::-webkit-scrollbar-thumb{background:#243140;border-radius:9px}
+.badge{
+  display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11.5px;
+  padding:4px 10px;border-radius:99px;border:1px solid rgba(55,214,192,.35);
+  color:var(--teal);background:var(--teal-soft);
+}
+.badge.warn{color:var(--amber);border-color:rgba(240,179,84,.35);background:rgba(240,179,84,.1)}
+
+/* ---------- footer ---------- */
+footer{
+  border-top:1px solid var(--line-soft);margin-top:80px;padding:34px 0 60px;
+  font-size:12.5px;color:var(--dim2);display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;
+}
+
+/* ---------- reveal ---------- */
+.rv{opacity:0;transform:translateY(14px);transition:opacity .6s cubic-bezier(.2,.8,.2,1),transform .6s cubic-bezier(.2,.8,.2,1)}
+.rv.in{opacity:1;transform:none}
+
+.sm-hide{display:inline}
+@media (max-width:860px){
+  .qgrid,.grid2,.grid3{grid-template-columns:1fr}
+  .hero{padding:52px 0 26px}
+  .topbar-inner{padding:10px 16px;gap:10px}
+  .brand span{display:none}
+  .navlinks{margin-left:auto;gap:0;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;max-width:70vw}
+  .navlinks::-webkit-scrollbar{display:none}
+  .navlinks a{font-size:12px;padding:5px 8px;white-space:nowrap}
+  .sm-hide{display:none}
+  .sec{padding:48px 0 4px}
+  .panel{padding:18px}
+  main{padding:0 16px 70px}
+  .stats{gap:14px 18px}
+  .stat .v{font-size:20px}
+  .strip{font-size:11.5px}
+  .pipe-step{grid-template-columns:28px 1fr;gap:10px}
+  .pipe-step .c{display:none}
+}
+</style>
+</head>
+<body>
+<div class="progress-track"><div class="progress-bar" id="progressBar"></div></div>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><b>sdust</b><span>symmetric dust / rust</span></div>
+    <nav class="navlinks">
+      <a href="#problem">问题</a>
+      <a href="#method">方法</a>
+      <a href="#why">原理</a>
+      <a href="#evidence">证据</a>
+      <a href="#lab">实验室</a>
+    </nav>
+  </div>
+</div>
+
+<main>
+<!-- ============ HERO ============ -->
+<section class="hero">
+  <p class="eyebrow">rust port of lh3/sdust <span class="sm-hide">· byte-identical to dustmasker</span></p>
+  <h1>把 DNA 里那些<span class="g">「没有信息量」</span>的<span class="nw">片段，</span><br>在一次线性扫描中<span class="nw">指出来。</span></h1>
+  <p class="lede">
+    这个项目是 NCBI <b>symmetric DUST</b> 算法的 Rust 实现：输入 FASTA/FASTQ（可 gzip），
+    输出低复杂度区间的 BED 坐标。它要同时满足三件互相拉扯的事——
+    结果与业界事实标准 <code>dustmasker</code> 一致、能流式处理海量数据、还能作为库嵌进别人的流水线。
+  </p>
+
+  <div class="qgrid">
+    <button class="qcard" data-goto="#problem">
+      <span class="num">Q1 / WHAT</span>
+      <h3>解决了什么问题？</h3>
+      <p>低复杂度区域会让比对、组装、搜索产生大量假阳性。需要一个又快又稳的「标记器」，而不是过滤器。</p>
+      <div class="arrow">↓ 看问题定义</div>
+    </button>
+    <button class="qcard" data-goto="#method">
+      <span class="num">Q2 / HOW</span>
+      <h3>如何解决的？</h3>
+      <p>3-mer 滚动窗口 + 相同三联体「配对」计数，增量维护；可疑窗口才向左回溯，单遍扫描出区间。</p>
+      <div class="arrow">↓ 看实现路径</div>
+    </button>
+    <button class="qcard" data-goto="#why">
+      <span class="num">Q3 / WHY</span>
+      <h3>为什么能解决？</h3>
+      <p>因为「低复杂度」等价于「三联体重复异常」，而这个量可以在 O(1) 内增删、且对链方向不变。</p>
+      <div class="arrow">↓ 亲手跑一遍算法</div>
+    </button>
+  </div>
+</section>
+
+<!-- ============ 01 PROBLEM ============ -->
+<section class="sec" id="problem">
+  <div class="sec-head rv">
+    <div class="sec-idx">01</div>
+    <div>
+      <span class="kicker">problem</span>
+      <h2>问题：序列里的「噪声段落」会污染所有下游统计</h2>
+      <p>基因组和测序数据中普遍存在低复杂度区域（LCR）：poly-A 尾巴、AT 二核苷酸串联重复、微卫星、低信息量的重复片段。它们不是错误，但几乎不含可用于区分的信号。</p>
+    </div>
+  </div>
+
+  <div class="grid3 rv">
+    <div class="card">
+      <h4><span class="dot"></span>比对与组装失真</h4>
+      <p>一个 20 bp 的 poly-A 能匹配基因组里成百上千个位置。种子（seed）在这些区域爆炸，导致 reads 被错误挂载、组装出嵌合 contig、或在该处堆积虚假 indel。</p>
+    </div>
+    <div class="card">
+      <h4><span class="dot"></span>显著性模型失效</h4>
+      <p>BLAST 一类工具的 E-value 建立在「随机背景序列」假设上。低复杂度区域偏离该假设，打分与 p 值不再可比，搜索结果被噪声淹没。</p>
+    </div>
+    <div class="card">
+      <h4><span class="dot"></span>需要「标记」而非「删除」</h4>
+      <p>软掩码（转小写）保留坐标与长度，硬掩码（换 N）彻底排除。两种做法都要求先拿到<b class="hl">精确区间</b>，所以输出必须是坐标，而不是过滤后的序列。</p>
+    </div>
+  </div>
+
+  <div class="panel rv" style="margin-top:14px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:14px">
+      <div>
+        <div class="tag teal">interactive</div>
+        <div style="font-size:15px;margin-top:8px;font-weight:560">掩码对种子集的真实影响</div>
+        <div class="dim" style="font-size:13px">12-mer 种子统计 · 点击开关，观察重复种子如何被清除</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="maskToggle" checked><span class="track"></span><span>应用 mask</span></label>
+    </div>
+    <div class="strip" id="seedStrip"></div>
+    <div class="stats" id="seedStats"></div>
+    <div class="code-note" id="seedNote"></div>
+  </div>
+
+  <div class="grid2 rv" style="margin-top:14px">
+    <div class="card">
+      <h4>已有的答案，与它们的缺口</h4>
+      <p><b class="hl">dustmasker</b>（NCBI，随 BLAST 发行）：事实标准，但 C++ 实现、构建链重、难以嵌入自建工具。</p>
+      <p><b class="hl">sdust</b>（Heng Li）：单文件 C 实现，极简，但只提供 C API；边界输入（损坏 FASTQ、非法参数）行为未定义。</p>
+    </div>
+    <div class="card">
+      <h4>本项目要填的格子</h4>
+      <p>在 Rust 生态里提供一个<b class="hl">行为可对拍</b>、<b class="hl">单遍流式</b>、<b class="hl">可复用缓冲</b>的实现：CLI 与 C 版本逐字节一致，库接口则是 Rust 风格的（<span class="mono">Interval</span> / <span class="mono">Masker</span>），并且 <span class="mono" style="white-space:nowrap">#![forbid(unsafe_code)]</span>。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 02 METHOD ============ -->
+<section class="sec" id="method">
+  <div class="sec-head rv">
+    <div class="sec-idx">02</div>
+    <div>
+      <span class="kicker">method</span>
+      <h2>方法：一次扫描，三次决策</h2>
+      <p>整条流水线只有三个真正需要动脑的决策：<b class="hl">用什么量衡量复杂度</b>、<b class="hl">怎么在滑动时增量维护它</b>、<b class="hl">什么时候可以把区间确定下来输出</b>。点击每一步展开。</p>
+    </div>
+  </div>
+
+  <div class="pipe rv" id="pipe"></div>
+  <div class="pipe-detail rv" id="pipeDetail"></div>
+
+  <div class="grid2 rv" style="margin-top:22px">
+    <div class="card">
+      <h4>决策一：统计量选「配对」，不选「频次」</h4>
+      <p>窗口内某个三联体出现 <span class="mono">c</span> 次，它对复杂度的贡献是 <span class="mono">C(c,2)</span> 对相同三联体。相比「出现次数的最大值」，配对计数对「一路重复下去」有二次放大：<span class="mono">c</span> 从 4 到 8，配对从 6 到 28。判定因此极其敏感。</p>
+    </div>
+    <div class="card">
+      <h4>决策二：阈值写成比值</h4>
+      <p><span class="mono">10·r &gt; T·n</span>，其中 <span class="mono">r</span> 是配对总数、<span class="mono">n</span> 是窗口内的三联体位置数。左式与右式同阶增长，于是阈值等价于「重复率超过 T/10」，<b class="hl">不随窗口长度漂移</b>——这是窗口能从满长自动收缩到更短，而判定仍然可比的原因。</p>
+    </div>
+  </div>
+
+  <div class="rv" style="margin-top:22px">
+    <div class="tabs" id="codeTabs">
+      <button class="on" data-tab="0">滚动窗口</button>
+      <button data-tab="1">阈值门控</button>
+      <button data-tab="2">自适应收缩</button>
+      <button data-tab="3">区间确定化</button>
+    </div>
+    <pre class="code" id="codeBox"><code><span class="c">// 进：新词贡献的配对数 = 它此前的出现次数（O(1)）</span>
+ring_pairs += ring_count[word] <span class="k">as</span> i64;
+ring_count[word] += <span class="n">1</span>;
+
+win_pairs  += win_count[word] <span class="k">as</span> i64;
+win_count[word]  += <span class="n">1</span>;
+
+<span class="c">// 出：先把计数减一，再扣掉它此刻剩下的贡献</span>
+ring_count[oldest] -= <span class="n">1</span>;
+ring_pairs -= ring_count[oldest] <span class="k">as</span> i64;
+
+<span class="c">// 全程没有对窗口的任何一次重扫</span></code></pre>
+  </div>
+</section>
+
+<!-- ============ 03 WHY / ANATOMY ============ -->
+<section class="sec" id="why">
+  <div class="sec-head rv">
+    <div class="sec-idx">03</div>
+    <div>
+      <span class="kicker">why it works</span>
+      <h2>为什么能解决：把「看起来重复」变成一个可增量维护的数</h2>
+      <p>下面是一个逐碱基运行的算法可视化。窗口每次右移一位，<span class="mono">r</span> 只做加减法就更新完毕；一旦 <span class="mono">10r &gt; T·n</span>，才向左回溯找「完美区间」。自己点几下比读十段文字快。</p>
+    </div>
+  </div>
+
+  <div class="panel rv">
+    <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;margin-bottom:14px">
+      <div>
+        <div class="tag violet">live scanner</div>
+        <div style="font-size:15px;margin-top:8px;font-weight:560">单遍扫描：窗口、配对计数、判定</div>
+      </div>
+      <div style="display:flex;gap:9px;align-items:center">
+        <button class="icon" id="btnReset" title="重置">⟲</button>
+        <button class="icon" id="btnStep" title="单步">→</button>
+        <button class="primary" id="btnPlay">▶ 播放</button>
+      </div>
+    </div>
+
+    <div class="strip" id="scanSeq" style="line-height:2.1"></div>
+
+    <div class="timeline" id="timeline"></div>
+    <div class="code-note" style="display:flex;justify-content:space-between;gap:4px 14px;flex-wrap:wrap">
+      <span>↑ 每个位置的三联体重复率 10r/Tn（红 = 越过阈值，黄 = 当前位置）</span>
+      <span id="scanPosLabel">pos 0</span>
+    </div>
+
+    <div style="display:flex;gap:22px;flex-wrap:wrap;align-items:center;margin-top:18px">
+      <div class="slider-row" style="flex:1;min-width:200px">
+        <span class="lbl">-w 窗口</span>
+        <input type="range" id="scanW" min="6" max="32" step="1" value="16">
+        <output id="scanWOut">16</output>
+      </div>
+      <div class="slider-row" style="flex:1;min-width:200px">
+        <span class="lbl">-t 阈值</span>
+        <input type="range" id="scanT" min="2" max="40" step="1" value="10">
+        <output id="scanTOut">10</output>
+      </div>
+    </div>
+
+    <div class="grid2" style="margin-top:20px;gap:20px">
+      <div>
+        <div class="stats sgrid" style="margin-top:0">
+          <div class="stat"><div class="k">窗口 n（三联体）</div><div class="v" id="stN">—</div></div>
+          <div class="stat"><div class="k">配对 r</div><div class="v" id="stR">—</div></div>
+          <div class="stat"><div class="k">10r / T·n</div><div class="v small" id="stRatio">—</div></div>
+          <div class="stat"><div class="k">判定</div><div class="v small" id="stVerdict">—</div></div>
+        </div>
+        <div style="margin-top:16px">
+          <div class="bar-outer"><div class="bar-inner" id="stBar"></div></div>
+          <div class="bar-label"><span>10·r</span><span id="stBarLabel">T·n</span></div>
+        </div>
+        <div class="code-note" id="stWindow">窗口覆盖 —</div>
+      </div>
+      <div>
+        <div class="stat"><div class="k">窗口内高频三联体</div></div>
+        <div class="wordrows" id="wordRows"></div>
+      </div>
+    </div>
+
+    <div class="code-note" style="margin-top:18px;border-top:1px solid var(--line-soft);padding-top:12px">
+      最终输出区间（BED，0-based 半开）：<span id="scanRegions" style="color:var(--teal)">—</span>
+    </div>
+  </div>
+
+  <div class="grid3 rv" style="margin-top:14px">
+    <div class="card">
+      <h4>为什么是 3-mer</h4>
+      <p>碱基只有 4 种，单碱基或二联体的重复在随机序列里也常见；四联体以上又会漏掉短重复。窗口内 3-mer 的配对计数对「短周期重复」（AT、AAG、ACGT…）都敏感，同时只有 64 个桶，计数表能整个放进 L1。</p>
+    </div>
+    <div class="card">
+      <h4>为什么能单遍</h4>
+      <p>窗口向右滑时，进入一个新词、离开一个旧词，<span class="mono">r</span> 的增删都是 O(1)。只有当窗口「已经可疑」时才向左做一次回溯扫描（<span class="mono">find_perfect</span>），随机序列里这个分支几乎不触发。</p>
+    </div>
+    <div class="card">
+      <h4>为什么结果对称</h4>
+      <p>配对计数只依赖三联体的<b class="hl">重数分布</b>。反向互补把每个三联体映射成另一个三联体，这是一一对应，因此 <span class="mono">Σ C(c<sub>w</sub>,2)</span> 完全不变——同一条序列正反链得到镜像一致的区间。</p>
+    </div>
+  </div>
+
+  <div class="panel rv" style="margin-top:14px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
+      <div>
+        <div class="tag teal">verify it yourself</div>
+        <div style="font-size:15px;margin-top:8px;font-weight:560">对称性检验：把序列反向互补，区间应当左右镜像</div>
+      </div>
+      <button id="rcBtn">反向互补并比较</button>
+    </div>
+    <div class="strip" id="rcSeq" style="margin-top:14px"></div>
+    <div class="code-note" id="rcOut">点击按钮运行。</div>
+  </div>
+</section>
+
+<!-- ============ 04 EVIDENCE ============ -->
+<section class="sec" id="evidence">
+  <div class="sec-head rv">
+    <div class="sec-idx">04</div>
+    <div>
+      <span class="kicker">evidence</span>
+      <h2>为什么可以信任它：把「一致」变成可执行的断言</h2>
+      <p>正确性不靠论证，靠对拍。移植过程中与 C 版本做了逐字节差分；随机差分测试把长度 0–600 bp 的各种脏输入扫了一遍；这些结果的一部分被固化成夹具，每次 <span class="mono">cargo test</span> 都重新验证。</p>
+    </div>
+  </div>
+
+  <div class="grid2 rv">
+    <div class="card">
+      <h4>等价性验证</h4>
+      <div class="checks" style="margin-top:10px">
+        <div class="check"><span class="ok">✓</span><div><b>90 组参数组合</b>：<span class="mono">-w ∈ {3,4,8,16,32,64} × -t ∈ {1,5,10,20,30}</span>，FASTA / FASTQ / gzip 全一致。</div></div>
+        <div class="check"><span class="ok">✓</span><div><b>随机差分</b>：串联重复、poly-A、N gap、大小写、多行 FASTQ，逐字节比对无差异。</div></div>
+        <div class="check"><span class="ok">✓</span><div><b>规模测试</b>：5 Mbp 随机序列、3% 重复的基因组风格序列、20% 重复的高重复序列，输出全部一致。</div></div>
+        <div class="check"><span class="ok">✓</span><div><b>边界输入</b>：BGZF 多成员 gzip、CRLF、多行质量值、缺结尾换行、前后垃圾字符。</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <h4>刻意的差异（都是改好的地方）</h4>
+      <div class="checks" style="margin-top:10px">
+        <div class="check"><span class="ok" style="color:var(--amber)">→</span><div><b>损坏 FASTQ 报错</b>：C 版本静默停止（退出码 0），这里报 <span class="mono">truncated quality string</span> 并以 1 退出。</div></div>
+        <div class="check"><span class="ok" style="color:var(--amber)">→</span><div><b>参数校验</b>：<span class="mono">-w ∈ 3..=65535</span>、<span class="mono">-t &gt; 0</span>；C 版本 <span class="mono">-w 0</span> 会越界读。</div></div>
+        <div class="check"><span class="ok" style="color:var(--amber)">→</span><div><b>CLI 是超集</b>：长选项、<span class="mono">-h/--help</span>、<span class="mono">-V/--version</span>、多余参数报错。</div></div>
+        <div class="check"><span class="ok" style="color:var(--amber)">→</span><div><b>Rust 风格 API</b>：<span class="mono">Interval{start,finish}</span> 代替打包进 u64 的两个数；<span class="mono">Masker</span> 代替 <span class="mono">sdust_buf_t</span>；坐标上限 <span class="mono">u32::MAX</span>。</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel rv" style="margin-top:14px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap">
+      <div>
+        <div class="tag amber">benchmark</div>
+        <div style="font-size:15px;margin-top:8px;font-weight:560">同机、<span class="mono">-w 64 -t 20</span>、三次取最小值</div>
+      </div>
+      <span class="dim" style="font-size:12.5px">Rust 在热路径上做了 16 字节区间结构与二分插入</span>
+    </div>
+    <div style="margin-top:20px" id="perf"></div>
+    <div class="legend">
+      <span><i style="background:linear-gradient(90deg,#37475a,#5b7188)"></i>C 版本</span>
+      <span><i style="background:linear-gradient(90deg,rgba(55,214,192,.45),#37d6c0)"></i>Rust 版本</span>
+      <span style="color:var(--dim2)">条长按对数刻度，数字为实际耗时</span>
+    </div>
+  </div>
+
+  <div class="grid3 rv" style="margin-top:14px">
+    <div class="card">
+      <h4>代价与边界</h4>
+      <p>高重复输入（20% 重复的 5 Mbp）要 12.8 s：每个可疑位置都会触发一次 O(W) 的向左回溯。这是算法的固有成本，不是实现缺陷；随机序列只要 0.057 s。</p>
+    </div>
+    <div class="card">
+      <h4>内存</h4>
+      <p>环形缓冲 <span class="mono">O(W)</span> + 64 桶计数 + 区间栈，与序列长度无关。因此可以处理「比内存大得多」的 FASTQ 流。</p>
+    </div>
+    <div class="card">
+      <h4>安全性</h4>
+      <p><span class="mono" style="white-space:nowrap">#![forbid(unsafe_code)]</span>；<span class="mono">Masker::mask</span> 不 panic；非法参数由 <span class="mono">Params::validate()</span> 显式返回错误。这是「库」而非「脚本」的要求。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 05 LAB ============ -->
+<section class="sec" id="lab">
+  <div class="sec-head rv">
+    <div class="sec-idx">05</div>
+    <div>
+      <span class="kicker">playground</span>
+      <h2>实验室：换成你自己的序列</h2>
+      <p>页面内嵌了与 <span class="mono">src/lib.rs</span> 同构的算法实现（同一套 <span class="mono">Ring</span> / <span class="mono">Sliding</span> / <span class="mono">perfect</span> 逻辑）。改序列、拖动参数，实时看区间。</p>
+    </div>
+  </div>
+
+  <div class="panel rv">
+    <textarea id="labSeq" spellcheck="false"></textarea>
+    <div style="display:flex;gap:22px;flex-wrap:wrap;align-items:center;margin-top:14px">
+      <div class="slider-row" style="flex:1;min-width:190px">
+        <span class="lbl">-w</span><input type="range" id="labW" min="3" max="80" value="64"><output id="labWOut">64</output>
+      </div>
+      <div class="slider-row" style="flex:1;min-width:190px">
+        <span class="lbl">-t</span><input type="range" id="labT" min="1" max="60" value="20"><output id="labTOut">20</output>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
+      <button id="labPreset1">poly-A + AT 重复</button>
+      <button id="labPreset2">随机序列</button>
+      <button id="labPreset3">带 N gap</button>
+      <button id="labCopy">复制 BED</button>
+      <span class="badge" id="labBadge" style="margin-left:auto">—</span>
+    </div>
+
+    <div class="strip" id="labView" style="margin-top:14px;max-height:220px;overflow:auto"></div>
+
+    <div class="grid2" style="margin-top:14px;gap:20px">
+      <div>
+        <div class="stats" style="margin-top:0">
+          <div class="stat"><div class="k">区间数</div><div class="v" id="labCount">0</div></div>
+          <div class="stat"><div class="k">被掩码碱基</div><div class="v" id="labBp">0</div></div>
+          <div class="stat"><div class="k">占比</div><div class="v small" id="labPct">0%</div></div>
+        </div>
+      </div>
+      <div class="regions">
+        <table id="labTable"><thead><tr><th>start</th><th>finish</th><th>len</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+    <div class="code-note" id="labNote"></div>
+  </div>
+</section>
+
+<footer>
+  <div>算法：Morgulis et al., <i>Bioinformatics</i> 2006（symmetric DUST）· 原始实现：<a href="https://github.com/lh3/sdust">lh3/sdust</a> · 本项目为 MIT 许可的 Rust 移植。</div>
+  <div class="mono">页面内算法为 lib.rs 的同构 JS 实现，用于演示；生产请使用 <span style="color:var(--teal)">cargo build --release</span></div>
+</footer>
+</main>
+
+<script>
+/* =========================================================
+   0. DUST core — faithful port of src/lib.rs
+   ========================================================= */
+const WLEN = 3, WTOT = 64, WMSK = 63;
+const NT4 = new Uint8Array(256).fill(4);
+NT4[65] = 0; NT4[97] = 0;
+NT4[67] = 1; NT4[99] = 1;
+NT4[71] = 2; NT4[103] = 2;
+NT4[84] = 3; NT4[116] = 3;
+const IDX2NT = 'ACGT';
+
+class Sliding {
+  constructor() {
+    this.buf = new Uint8Array(16);
+    this.head = 0;
+    this.n = 0;
+    this.ringCount = new Uint32Array(WTOT);
+    this.winCount = new Uint32Array(WTOT);
+    this.ringPairs = 0;
+    this.winPairs = 0;
+    this.len = 0;
+  }
+  ringLen() { return this.n; }
+  isEmpty() { return this.n === 0; }
+  clear() {
+    this.head = 0; this.n = 0;
+    this.ringCount.fill(0); this.winCount.fill(0);
+    this.ringPairs = 0; this.winPairs = 0; this.len = 0;
+  }
+  get(i) { return this.buf[(this.head + i) & (this.buf.length - 1)]; }
+  pushRing(v) {
+    if (this.n === this.buf.length) this.grow();
+    this.buf[(this.head + this.n) & (this.buf.length - 1)] = v;
+    this.n++;
+  }
+  popFront() {
+    if (this.n === 0) return -1;
+    const v = this.buf[this.head];
+    this.head = (this.head + 1) & (this.buf.length - 1);
+    this.n--;
+    return v;
+  }
+  grow() {
+    const buf = new Uint8Array(this.buf.length * 2);
+    const mask = this.buf.length - 1;
+    for (let i = 0; i < this.n; i++) buf[i] = this.buf[(this.head + i) & mask];
+    this.buf = buf; this.head = 0;
+  }
+  push(word, total, window) {
+    if (!this.isEmpty() && this.ringLen() > window - WLEN) {
+      const oldest = this.popFront();
+      this.ringCount[oldest]--;
+      this.ringPairs -= this.ringCount[oldest];
+      if (this.len > this.ringLen()) {
+        this.len--;
+        this.winCount[oldest]--;
+        this.winPairs -= this.winCount[oldest];
+      }
+    }
+    this.pushRing(word);
+    this.len++;
+    this.ringPairs += this.ringCount[word];
+    this.ringCount[word]++;
+    this.winPairs += this.winCount[word];
+    this.winCount[word]++;
+    if (this.winCount[word] * 10 > total * 2) {
+      for (;;) {
+        const offset = this.ringLen() - this.len;
+        const oldest = this.get(offset);
+        this.winCount[oldest]--;
+        this.winPairs -= this.winCount[oldest];
+        this.len--;
+        if (oldest === word) break;
+      }
+    }
+  }
+}
+
+function saveMasked(result, perfect, start) {
+  if (!perfect.length) return;
+  const leftmost = perfect[perfect.length - 1];
+  if (leftmost.start >= start) return;
+  const prev = result[result.length - 1];
+  if (prev && leftmost.start <= prev.finish) {
+    if (leftmost.finish > prev.finish) prev.finish = leftmost.finish;
+  } else {
+    result.push({ start: leftmost.start, finish: leftmost.finish });
+  }
+  let keep = perfect.length;
+  while (keep > 0 && perfect[keep - 1].start < start) keep--;
+  perfect.length = keep;
+}
+
+function findPerfect(perfect, sliding, total, start) {
+  const size = sliding.ringLen();
+  const window = sliding.len;
+  if (size <= window) return;
+  const counts = sliding.winCount.slice();
+  let r = sliding.winPairs;
+  let maxR = 0, maxL = 1;
+  const finish = size + (WLEN - 1) + start;
+  for (let i = size - window - 1; i >= 0; i--) {
+    const w = sliding.get(i);
+    r += counts[w];
+    counts[w]++;
+    const newR = r, newL = size - i - 1;
+    if (newR * 10 <= total * newL) continue;
+    const startI = i + start;
+    let lo = 0, hi = perfect.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (perfect[mid].start >= startI) lo = mid + 1; else hi = mid;
+    }
+    for (let k = 0; k < lo; k++) {
+      const p = perfect[k];
+      if (p.r * maxL > maxR * p.len) { maxR = p.r; maxL = p.len; }
+    }
+    if (newR * maxL >= maxR * newL) {
+      maxR = newR; maxL = newL;
+      perfect.splice(lo, 0, { start: startI, finish, r: newR, len: newL });
+    }
+  }
+}
+
+function dust(seq, total, window) {
+  const n = seq.length;
+  const result = [], perfect = [];
+  const sliding = new Sliding();
+  let word = 0, l = 0;
+  for (let i = 0; i <= n; i++) {
+    const code = i < n ? NT4[seq.charCodeAt(i)] : 4;
+    if (code < 4) {
+      l++;
+      word = ((word << 2) | code) & WMSK;
+      if (l >= WLEN) {
+        const start = Math.max(l - window, 0) + (i + 1 - l);
+        saveMasked(result, perfect, start);
+        sliding.push(word, total, window);
+        if (sliding.ringPairs * 10 > sliding.len * total) findPerfect(perfect, sliding, total, start);
+      }
+    } else {
+      let start = Math.max(l - window + 1, 0) + (i + 1 - l);
+      while (perfect.length) { saveMasked(result, perfect, start); start++; }
+      l = 0; word = 0;
+    }
+  }
+  return result;
+}
+
+/* =========================================================
+   1. small helpers
+   ========================================================= */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const K3 = (w) => IDX2NT[(w >> 4) & 3] + IDX2NT[(w >> 2) & 3] + IDX2NT[w & 3];
+function rc(s) {
+  const map = { A: 'T', C: 'G', G: 'C', T: 'A', N: 'N' };
+  let out = '';
+  for (let i = s.length - 1; i >= 0; i--) {
+    const c = s[i].toUpperCase();
+    out += map[c] || 'N';
+  }
+  return out;
+}
+function inRegion(regions, i) {
+  for (const r of regions) { if (i >= r.start && i < r.finish) return true; if (r.start > i) break; }
+  return false;
+}
+
+/* reveal on scroll */
+const io = new IntersectionObserver((es) => {
+  es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+}, { threshold: 0.12 });
+$$('.rv').forEach(e => io.observe(e));
+
+/* nav active state + progress */
+const secIds = ['problem', 'method', 'why', 'evidence', 'lab'];
+const navMap = {};
+$$('.navlinks a').forEach(a => navMap[a.getAttribute('href').slice(1)] = a);
+const onScroll = () => {
+  const h = document.documentElement;
+  const p = h.scrollTop / (h.scrollHeight - h.clientHeight || 1);
+  $('#progressBar').style.width = (p * 100).toFixed(2) + '%';
+  let cur = null;
+  secIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.getBoundingClientRect().top < window.innerHeight * 0.35) cur = id;
+  });
+  $$('.navlinks a').forEach(a => a.classList.remove('active'));
+  if (cur && navMap[cur]) navMap[cur].classList.add('active');
+};
+window.addEventListener('scroll', onScroll, { passive: true });
+onScroll();
+$$('.qcard').forEach(b => b.addEventListener('click', () => {
+  const t = document.querySelector(b.dataset.goto);
+  if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}));
+
+/* =========================================================
+   2. seed masking demo (section 01)
+   ========================================================= */
+const SEED_SEQ = 'GATCGGCTAACGTTAGCCAGTTCGACCTGAT' + 'AT'.repeat(14) + 'CGGTACGATCGGCAT' + 'A'.repeat(16) + 'GTACGGTACGCTAG';
+const KSEED = 12;
+function seedStats(seq, regions, k) {
+  const seen = new Map();
+  let total = 0, max = 0, repeats = 0;
+  for (let i = 0; i + k <= seq.length; i++) {
+    const kmer = seq.slice(i, i + k);
+    if (kmer.includes('N')) continue;
+    if (regions && inRegion(regions, i)) continue;
+    if (regions && inRegion(regions, i + k - 1)) continue;
+    total++;
+    const c = (seen.get(kmer) || 0) + 1;
+    seen.set(kmer, c);
+    if (c > max) max = c;
+    if (c > 1) repeats++;
+  }
+  return { total, distinct: seen.size, max, repeats };
+}
+function renderSeedDemo() {
+  const masked = $('#maskToggle').checked;
+  const regions = masked ? dust(SEED_SEQ, 20, 64) : [];
+  const s = seedStats(SEED_SEQ, masked ? regions : null, KSEED);
+  const strip = $('#seedStrip');
+  let html = '';
+  for (let i = 0; i < SEED_SEQ.length; i++) {
+    const ch = SEED_SEQ[i];
+    const cls = inRegion(regions, i) ? 'lc' : '';
+    html += '<span class="' + cls + '">' + ch + '</span>';
+    if ((i + 1) % 50 === 0 && i + 1 < SEED_SEQ.length) html += '<span class="gap"></span>';
+  }
+  strip.innerHTML = html;
+  $('#seedStats').innerHTML = [
+    ['种子总数', s.total, ''],
+    ['不同种子', s.distinct, ''],
+    ['最高多重性', s.max, s.max > 2 ? 'red' : ''],
+    ['冗余度', (s.total / Math.max(1, s.distinct)).toFixed(2) + '×', s.total / Math.max(1, s.distinct) > 1.3 ? 'red' : '']
+  ].map(([k, v, c]) => '<div class="stat"><div class="k">' + k + '</div><div class="v ' + c + '">' + v + '</div></div>').join('');
+  const unmasked = seedStats(SEED_SEQ, null, KSEED);
+  $('#seedNote').textContent = masked
+    ? '掩码后：' + unmasked.total + ' → ' + s.total + ' 个候选种子，最高多重性 ' + unmasked.max + ' → ' + s.max +
+      '，冗余度 ' + (unmasked.total / unmasked.distinct).toFixed(2) + '× → ' + (s.total / Math.max(1, s.distinct)).toFixed(2) + '×。重复区不再向外「广播」相同的种子。'
+    : '未掩码：' + KSEED + '-mer 的最高多重性是 ' + s.max + '，同一个种子在窗口里反复出现——比对器会在这里产生大量候选位置。';
+}
+$('#maskToggle').addEventListener('change', renderSeedDemo);
+renderSeedDemo();
+
+/* =========================================================
+   3. pipeline (section 02)
+   ========================================================= */
+const PIPE = [
+  {
+    t: '嗅探压缩格式', c: '0x1f 0x8b',
+    d: '<b>按魔数判断，不看扩展名。</b>读入的前两个字节是 gzip 头就套上 <span class="mono">MultiGzDecoder</span>，因此 BGZF 的多成员 gzip 也能连续读完。这意味着 <span class="mono">sdust in.fa.gz</span> 与 <span class="mono">zcat in.fa.gz | sdust -</span> 完全等价。'
+  },
+  {
+    t: '流式解析 FASTA / FASTQ', c: 'kseq.h 移植',
+    d: '<b>只保留 name 与 seq。</b>序列可跨多行，支持 CRLF、大小写混合；FASTQ 的质量串会被校验长度后丢弃。缓冲区复用，所以内存不随文件增长。'
+  },
+  {
+    t: '2-bit 编码', c: 'NT4[]',
+    d: '<b>A/C/G/T → 0..3，其余 → 4。</b>小写等价于大写。<span class="mono">4</span> 同时承担两个角色：把序列在 N 处切成独立片段，以及作为末尾的哨兵，驱使最后一小段被刷新出去。'
+  },
+  {
+    t: '3-mer 滚动', c: 'word = (word<<2|code)&63',
+    d: '<b>一个整数就是当前三联体。</b>右移进两位、掩掉高位，64 个可能的词全部落在 <span class="mono">0..63</span>，因此计数表是一个定长数组，而不是哈希表。'
+  },
+  {
+    t: '增量维护配对计数', c: 'r += count[w]',
+    d: '<b>进窗口</b>时，新词带来的配对数是它此前的出现次数；<b>出窗口</b>时，先减计数再扣掉剩余贡献。两个方向都是 O(1)，永不重扫窗口。'
+  },
+  {
+    t: '阈值门控', c: '10r > T·n',
+    d: '<b>先做一次廉价的判断。</b>只有 <span class="mono">ring_pairs*10 &gt; len*total</span> 时才值得向左回溯。随机序列里这一步几乎总是 false，这就是 5 Mbp 只要 57 ms 的原因。'
+  },
+  {
+    t: '回溯找完美区间', c: 'find_perfect',
+    d: '<b>从窗口右端向左扫</b>，累加 <span class="mono">r</span>，凡是满足阈值的后缀都构造成候选区间。只有「至少和右侧所有候选一样好」的才入栈——栈里因此只留 Pareto 最优，且天然按 start 降序排列。'
+  },
+  {
+    t: '确定化并输出', c: 'save_masked_regions',
+    d: '<b>窗口左边界越过某个区间的起点，它就不可能再变长了</b>，于是可以立刻确定并写出。与上一条区间重叠或相邻就合并。输出 <span class="mono">name\\tstart\\tfinish</span>，0-based 半开，BED 兼容。'
+  }
+];
+const pipeEl = $('#pipe');
+PIPE.forEach((p, i) => {
+  const b = document.createElement('button');
+  b.className = 'pipe-step' + (i === 0 ? ' on' : '');
+  b.innerHTML = '<span class="idx">' + String(i + 1).padStart(2, '0') + '</span>' +
+    '<span class="t">' + p.t + '</span><span class="c">' + p.c + '</span>';
+  b.addEventListener('click', () => {
+    $$('.pipe-step', pipeEl).forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    $('#pipeDetail').innerHTML = p.d;
+  });
+  pipeEl.appendChild(b);
+});
+$('#pipeDetail').innerHTML = PIPE[0].d;
+
+/* code tabs */
+const CODE = [
+`<span class="c">// 进：新词贡献的配对数 = 它此前的出现次数（O(1)）</span>
+ring_pairs += ring_count[word] <span class="k">as</span> i64;
+ring_count[word] += <span class="n">1</span>;
+
+win_pairs  += win_count[word] <span class="k">as</span> i64;
+win_count[word]  += <span class="n">1</span>;
+
+<span class="c">// 出：先把计数减一，再扣掉它此刻剩下的贡献</span>
+ring_count[oldest] -= <span class="n">1</span>;
+ring_pairs -= ring_count[oldest] <span class="k">as</span> i64;
+
+<span class="c">// 全程没有对窗口的任何一次重扫</span>`,
+`<span class="c">// Masker::mask —— 每个三联体位置都走这一段</span>
+<span class="k">let</span> start = (l - window).max(<span class="n">0</span>) + (i <span class="k">as</span> i64 + <span class="n">1</span> - l);
+save_masked_regions(&<span class="k">mut</span> self.result, &<span class="k">mut</span> self.perfect, start);
+self.sliding.push(word <span class="k">as</span> u8, total, window);
+
+<span class="c">// 只有窗口已经可疑，才值得向左回溯</span>
+<span class="k">if</span> self.sliding.ring_pairs * <span class="n">10</span> &gt; self.sliding.len * total {
+    find_perfect(&<span class="k">mut</span> self.perfect, &self.sliding, total, start);
+}`,
+`<span class="c">// 新词自身已经过载：从左侧丢词，直到把它自己丢掉</span>
+<span class="k">if</span> self.win_count[word] <span class="k">as</span> i64 * <span class="n">10</span> &gt; total * <span class="n">2</span> {
+    <span class="k">loop</span> {
+        <span class="k">let</span> offset = self.ring_len() - self.len;
+        <span class="k">let</span> oldest = self.ring.get(offset <span class="k">as</span> usize) <span class="k">as</span> usize;
+        self.win_count[oldest] -= <span class="n">1</span>;
+        self.win_pairs -= self.win_count[oldest] <span class="k">as</span> i64;
+        self.len -= <span class="n">1</span>;
+        <span class="k">if</span> oldest == word { <span class="k">break</span>; }
+    }
+}`,
+`<span class="c">// 区间按 start 降序排列，二分定位插入点</span>
+<span class="k">let</span> j = perfect.partition_point(|p| p.start &gt;= start_i);
+<span class="k">for</span> p <span class="k">in</span> &perfect[..j] {
+    <span class="c">// 只记住「起点更靠右的区间」里最好的分数</span>
+    <span class="k">if</span> p.r <span class="k">as</span> u64 * max_l &gt; max_r * p.len <span class="k">as</span> u64 {
+        max_r = p.r <span class="k">as</span> u64;
+        max_l = p.len <span class="k">as</span> u64;
+    }
+}
+<span class="c">// 不比右侧任何候选差，才值得保留</span>
+<span class="k">if</span> new_r * max_l &gt;= max_r * new_l {
+    perfect.insert(j, Perfect { start: start_i, finish, r: new_r <span class="k">as</span> u32, len: new_l <span class="k">as</span> u32 });
+}`
+];
+$$('#codeTabs button').forEach(b => b.addEventListener('click', () => {
+  $$('#codeTabs button').forEach(x => x.classList.remove('on'));
+  b.classList.add('on');
+  $('#codeBox').innerHTML = '<code>' + CODE[+b.dataset.tab] + '</code>';
+}));
+
+/* =========================================================
+   4. interactive scanner (section 03)
+   ========================================================= */
+const SCAN_SEQ = 'GATCGGCTAACGTTAGCCAGTTCGACCTGAT' + 'AT'.repeat(22) + 'CGGTACGATCGGCAT' + 'A'.repeat(26) + 'GTACGGTACGCTAG';
+const scanState = { pos: -1, stepsByPos: [], regions: [], timer: null, playing: false, W: 16, T: 10 };
+
+function simulate(seq, total, window) {
+  const sliding = new Sliding();
+  const byPos = new Array(seq.length).fill(null);
+  let word = 0, l = 0, pieceStart = 0;
+  for (let i = 0; i < seq.length; i++) {
+    const code = NT4[seq.charCodeAt(i)];
+    if (code < 4) {
+      l++;
+      word = ((word << 2) | code) & WMSK;
+      if (l >= WLEN) {
+        sliding.push(word, total, window);
+        const n = sliding.len, r = sliding.winPairs;
+        const wStart = Math.max(pieceStart, i - (n - 1) - 2, 0);
+        byPos[i] = {
+          wStart, wEnd: i, n, r,
+          hit: r * 10 > n * total,
+          counts: Array.from(sliding.winCount)
+        };
+      }
+    } else {
+      l = 0; word = 0; pieceStart = i + 1;
+    }
+  }
+  return byPos;
+}
+
+function buildScan() {
+  const seqEl = $('#scanSeq');
+  let html = '';
+  for (let i = 0; i < SCAN_SEQ.length; i++) {
+    const c = SCAN_SEQ[i];
+    html += '<span data-i="' + i + '" class="' + (NT4[SCAN_SEQ.charCodeAt(i)] === 4 ? 'n' : '') + '">' + c + '</span>';
+  }
+  seqEl.innerHTML = html;
+
+  const tl = $('#timeline');
+  tl.innerHTML = '';
+  scanState.stepsByPos.forEach((s, i) => {
+    const d = document.createElement('div');
+    d.className = 'b';
+    d.style.height = '2px';
+    tl.appendChild(d);
+  });
+}
+
+function resetScan() {
+  stopPlay();
+  scanState.pos = -1;
+  scanState.stepsByPos = simulate(SCAN_SEQ, scanState.T, scanState.W);
+  scanState.regions = dust(SCAN_SEQ, scanState.T, scanState.W);
+  buildScan();
+  $('#scanRegions').textContent = scanState.regions.length
+    ? scanState.regions.map(r => r.start + '-' + r.finish).join('  ')
+    : '（无）';
+  paintScan();
+}
+
+function paintScan() {
+  const pos = scanState.pos;
+  const steps = scanState.stepsByPos;
+  const cur = pos >= 0 ? steps[pos] : null;
+
+  // sequence classes
+  const spans = $$('#scanSeq span');
+  for (let i = 0; i < spans.length; i++) {
+    const sp = spans[i];
+    let cls = NT4[SCAN_SEQ.charCodeAt(i)] === 4 ? 'n' : '';
+    if (i <= pos && inRegion(scanState.regions, i)) cls += ' lc';
+    if (cur && i >= cur.wStart && i <= cur.wEnd) cls += ' win';
+    if (cur && i > cur.wEnd - 3 && i <= cur.wEnd) cls = 'cur';
+    sp.className = cls;
+  }
+
+  // timeline
+  const bars = $$('#timeline .b');
+  const maxRatio = 2.2;
+  for (let i = 0; i < bars.length; i++) {
+    const s = steps[i];
+    let h = 4, cls = '';
+    if (s && i <= pos) {
+      const ratio = s.n > 0 ? (s.r * 10) / (s.n * scanState.T) : 0;
+      h = clamp(ratio / maxRatio, 0.06, 1) * 100;
+      cls = ratio > 1 ? 'hot' : 'on';
+    } else if (i <= pos) {
+      cls = 'on';
+    }
+    bars[i].style.height = h + '%';
+    bars[i].className = 'b ' + cls;
+  }
+  if (pos >= 0 && bars[pos]) bars[pos].className = 'b cursor';
+
+  // stats
+  if (!cur) {
+    $('#stN').textContent = '—';
+    $('#stR').textContent = '—';
+    $('#stRatio').textContent = '—';
+    $('#stVerdict').textContent = '—';
+    $('#stVerdict').className = 'v small';
+    $('#stBar').style.width = '0%';
+    $('#stBar').classList.remove('hot');
+    $('#wordRows').innerHTML = '';
+    $('#stWindow').textContent = '窗口覆盖 —';
+    $('#scanPosLabel').textContent = 'pos ' + (pos + 1);
+    return;
+  }
+  const denom = cur.n * scanState.T;
+  const ratio = denom > 0 ? (cur.r * 10) / denom : 0;
+  $('#stN').textContent = cur.n;
+  $('#stR').textContent = cur.r;
+  $('#stRatio').textContent = ratio.toFixed(2) + '×';
+  const v = $('#stVerdict');
+  v.textContent = cur.hit ? '低复杂度' : '正常';
+  v.className = 'v small' + (cur.hit ? ' red' : '');
+  const w = clamp(ratio, 0, 1) * 100;
+  const bar = $('#stBar');
+  bar.style.width = w + '%';
+  bar.classList.toggle('hot', cur.hit);
+  $('#stBarLabel').textContent = 'T·n = ' + denom;
+  $('#stWindow').textContent = '窗口覆盖 [' + cur.wStart + ', ' + cur.wEnd + '] · n = ' + cur.n + ' 个三联体 · r = ' + cur.r + ' 对';
+
+  const rows = [];
+  for (let w = 0; w < WTOT; w++) if (cur.counts[w] > 1) rows.push([w, cur.counts[w]]);
+  rows.sort((a, b) => b[1] - a[1] || a[0] - b[0]);
+  const top = rows.slice(0, 4);
+  const mx = top.length ? top[0][1] : 1;
+  $('#wordRows').innerHTML = top.length
+    ? top.map(([w, c]) => '<div class="wordrow"><span class="w">' + K3(w) + '</span>' +
+      '<span class="mini"><i style="width:' + (c / mx * 100) + '%"></i></span>' +
+      '<span class="c">' + c + '×</span></div>').join('')
+    : '<div class="code-note">窗口内没有重复的三联体</div>';
+
+  $('#scanPosLabel').textContent = 'pos ' + (pos + 1) + ' / ' + SCAN_SEQ.length;
+}
+
+function stepForward() {
+  if (scanState.pos >= SCAN_SEQ.length - 1) { stopPlay(); return false; }
+  scanState.pos++;
+  paintScan();
+  return true;
+}
+function startPlay() {
+  if (scanState.playing) { stopPlay(); return; }
+  if (scanState.pos >= SCAN_SEQ.length - 1) scanState.pos = -1;
+  scanState.playing = true;
+  $('#btnPlay').textContent = '❚❚ 暂停';
+  scanState.timer = setInterval(() => { if (!stepForward()) stopPlay(); }, 55);
+}
+function stopPlay() {
+  scanState.playing = false;
+  $('#btnPlay').textContent = '▶ 播放';
+  if (scanState.timer) { clearInterval(scanState.timer); scanState.timer = null; }
+}
+
+$('#btnPlay').addEventListener('click', startPlay);
+$('#btnStep').addEventListener('click', () => { stopPlay(); stepForward(); });
+$('#btnReset').addEventListener('click', resetScan);
+$('#scanW').addEventListener('input', (e) => {
+  scanState.W = +e.target.value;
+  $('#scanWOut').textContent = scanState.W;
+  resetScan();
+});
+$('#scanT').addEventListener('input', (e) => {
+  scanState.T = +e.target.value;
+  $('#scanTOut').textContent = scanState.T;
+  resetScan();
+});
+resetScan();
+
+/* start the scanner once, when it first scrolls into view */
+const scanIO = new IntersectionObserver((es) => {
+  es.forEach(e => {
+    if (!e.isIntersecting || scanState.pos >= 0) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    startPlay();
+    scanIO.disconnect();
+  });
+}, { threshold: 0.45 });
+scanIO.observe($('#why .panel'));
+
+/* RC symmetry check */
+function runRc() {
+  const T = scanState.T, W = scanState.W;
+  const seq = SCAN_SEQ;
+  const rev = rc(seq);
+  const L = seq.length;
+  const a = dust(seq, T, W);
+  const b = dust(rev, T, W).map(r => ({ start: L - r.finish, finish: L - r.start }))
+    .sort((x, y) => x.start - y.start);
+  let html = '';
+  for (let i = 0; i < rev.length; i++) {
+    html += '<span class="' + (inRegion(b, i) ? 'lc' : '') + '">' + rev[i].toLowerCase() + '</span>';
+  }
+  $('#rcSeq').innerHTML = html;
+  const fmt = (rs) => rs.length ? rs.map(r => r.start + '-' + r.finish).join(', ') : '（无）';
+  const same = JSON.stringify(a) === JSON.stringify(b);
+  $('#rcOut').innerHTML = '正链区间：<span style="color:var(--teal)">' + fmt(a) + '</span>' +
+    '<br>反链区间镜像回来：<span style="color:var(--teal)">' + fmt(b) + '</span>' +
+    '<br>' + (same ? '<span class="badge" style="margin-top:8px">✓ 完全一致 — r 的配对计数在反向互补下不变</span>'
+      : '<span class="badge warn" style="margin-top:8px">✗ 不一致</span>');
+}
+$('#rcBtn').addEventListener('click', runRc);
+runRc();
+
+/* =========================================================
+   5. performance chart (section 04)
+   ========================================================= */
+const PERF = [
+  ['纯随机 5 Mbp', 0.064, 0.057],
+  ['基因组风格 5 Mbp（3% 重复）', 0.524, 0.430],
+  ['高重复 1 Mbp（20% 重复）', 2.004, 1.678],
+  ['高重复 5 Mbp（20% 重复）', 15.366, 12.809]
+];
+const perfEl = $('#perf');
+PERF.forEach(([name, c, rs]) => {
+  const row = document.createElement('div');
+  row.className = 'perf-row';
+  const wC = Math.max(3, Math.log10(c + 1) / Math.log10(20) * 100);
+  const wR = Math.max(3, Math.log10(rs + 1) / Math.log10(20) * 100);
+  row.innerHTML = '<div class="top"><span>' + name + '</span>' +
+    '<span><b>' + c.toFixed(3) + 's</b> → <b style="color:var(--teal)">' + rs.toFixed(3) + 's</b> · ' + (c / rs).toFixed(2) + '×</span></div>' +
+    '<div class="perf-bars"><div class="perf-bar c" data-w="' + wC + '"></div>' +
+    '<div class="perf-bar rs" data-w="' + wR + '"></div></div>';
+  perfEl.appendChild(row);
+});
+const perfIO = new IntersectionObserver((es) => {
+  es.forEach(e => {
+    if (e.isIntersecting) {
+      setTimeout(() => $$('.perf-bar', e.target).forEach(b => b.style.width = b.dataset.w + '%'), 70);
+      perfIO.unobserve(e.target);
+    }
+  });
+}, { threshold: 0.3 });
+perfIO.observe(perfEl);
+
+/* =========================================================
+   6. lab (section 05)
+   ========================================================= */
+const PRESET1 = 'GCATCGGATCCAGTTACGGATCGATCGTAGC' + 'AT'.repeat(18) + 'ACGTTGCAAGCTTCGATCG' + 'A'.repeat(30) + 'CGGATCCAGTTACGATCGAT';
+const PRESET2 = 'GATCGGCTAACGTTAGCCAGTTCGACCTGATCGGTACGATCGGCATGCACTGACGGTACGTAGCTAGCATCGATCGGCTAGCTAGGCTAACGTAGCTAGCATCGATCGGCATGCATCGTAGCTAGCTAACGTTAGCCAGTTCGACCTGATCGGTACGA';
+const PRESET3 = 'GCATCGGATCCAGTTACGGATCGATCGTAGCATATATATATATATATATATATATATATATATAAAAAAAAAAAAAAAAAAAAAAAAAAAANNNNNNNNNNGGTACGATCGGCATGCACTGACGGTACGTAGCTAGCATCGA';
+
+const lab = { W: 64, T: 20, last: [] };
+$('#labSeq').value = PRESET1;
+
+function renderLab() {
+  const seq = $('#labSeq').value.replace(/\s+/g, '').toUpperCase().slice(0, 4000);
+  const T = lab.T, W = lab.W;
+  const regions = seq.length ? dust(seq, T, W) : [];
+  lab.last = { seq, regions, T, W };
+
+  let masked = 0;
+  regions.forEach(r => { masked += Math.max(0, Math.min(r.finish, seq.length) - r.start); });
+
+  $('#labCount').textContent = regions.length;
+  $('#labBp').textContent = masked;
+  $('#labPct').textContent = seq.length ? (masked / seq.length * 100).toFixed(1) + '%' : '0%';
+
+  let html = '';
+  const limit = Math.min(seq.length, 2400);
+  for (let i = 0; i < limit; i++) {
+    html += '<span class="' + (inRegion(regions, i) ? 'lc' : '') + '">' + seq[i] + '</span>';
+    if ((i + 1) % 60 === 0) html += '<span class="gap"></span>';
+  }
+  $('#labView').innerHTML = html + (seq.length > limit ? '<span class="dim"> …（仅显示前 2400 bp）</span>' : '');
+
+  const tb = $('#labTable tbody');
+  tb.innerHTML = regions.length
+    ? regions.slice(0, 200).map(r => '<tr><td class="mono">' + r.start + '</td><td class="mono">' + r.finish +
+      '</td><td class="mono dim">' + (r.finish - r.start) + '</td></tr>').join('')
+    : '<tr><td colspan="3" class="dim" style="font-size:12.5px">没有低复杂度区间</td></tr>';
+
+  const badge = $('#labBadge');
+  if (!seq.length) { badge.textContent = '请输入序列'; badge.className = 'badge warn'; }
+  else if (regions.length) { badge.textContent = '检出 ' + regions.length + ' 个区间'; badge.className = 'badge'; }
+  else { badge.textContent = '未检出（可调低 -t 试试）'; badge.className = 'badge warn'; }
+
+  $('#labNote').textContent = '参数：-w ' + W + ' -t ' + T + ' · 序列长度 ' + seq.length + ' bp · 坐标 0-based 半开区间';
+}
+let labTimer = null;
+function queueLab() {
+  clearTimeout(labTimer);
+  labTimer = setTimeout(renderLab, 90);
+}
+$('#labSeq').addEventListener('input', queueLab);
+$('#labW').addEventListener('input', e => { lab.W = +e.target.value; $('#labWOut').textContent = lab.W; queueLab(); });
+$('#labT').addEventListener('input', e => { lab.T = +e.target.value; $('#labTOut').textContent = lab.T; queueLab(); });
+$('#labPreset1').addEventListener('click', () => { $('#labSeq').value = PRESET1; lab.W = 64; lab.T = 20; $('#labW').value = 64; $('#labT').value = 20; $('#labWOut').textContent = 64; $('#labTOut').textContent = 20; renderLab(); });
+$('#labPreset2').addEventListener('click', () => { $('#labSeq').value = PRESET2; renderLab(); });
+$('#labPreset3').addEventListener('click', () => { $('#labSeq').value = PRESET3; renderLab(); });
+$('#labCopy').addEventListener('click', () => {
+  const { seq, regions } = lab.last;
+  const bed = regions.map(r => 'seq\t' + r.start + '\t' + r.finish).join('\n');
+  const done = () => { $('#labCopy').textContent = '已复制 ✓'; setTimeout(() => $('#labCopy').textContent = '复制 BED', 1400); };
+  if (navigator.clipboard) navigator.clipboard.writeText(bed).then(done).catch(done);
+  else done();
+});
+renderLab();
+</script>
+</body>
+</html>

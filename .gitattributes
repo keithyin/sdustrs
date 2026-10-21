@@ -1,0 +1,5 @@
+# Keep line endings as LF on every platform: the end-to-end tests compare
+# program output byte-for-byte with the fixtures in tests/data/expected/.
+* text=auto eol=lf
+
+*.gz binary

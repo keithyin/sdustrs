@@ -143,3 +143,23 @@ jobs:
           files: artifacts/*
           generate_release_notes: true
           fail_on_unmatched_files: true
+
+  crates-io:
+    name: publish to crates.io
+    needs: [publish]            # 等二进制全部发布成功后再发 crate
+    runs-on: ubuntu-latest
+    environment: crates-io      # 可选：在仓库 Settings 里配人工审批
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: dry run
+        run: cargo publish --locked --dry-run
+
+      - name: cargo publish
+        run: cargo publish --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

@@ -9,7 +9,7 @@
 //! # Quick start
 //!
 //! ```
-//! use sdust::{Params, sdust};
+//! use sdustrs::{Params, sdust};
 //!
 //! let seq = b"ACGTACGTACGTAAAAAAAAAAAAAAAAAAAAAAAAAAAAACGTACGT";
 //! let regions = sdust(seq, Params::default());
@@ -22,7 +22,7 @@
 //! internal buffers (this is the counterpart of `sdust_buf_t` in the C API):
 //!
 //! ```
-//! use sdust::{Masker, Params};
+//! use sdustrs::{Masker, Params};
 //!
 //! let mut masker = Masker::new();
 //! for seq in [b"ACGTACGT".as_slice(), b"AAAAAAAAAAAAAAAAAAAAAAAA".as_slice()] {

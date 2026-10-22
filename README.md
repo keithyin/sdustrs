@@ -1,4 +1,6 @@
-# sdust (Rust)
+# sdustrs
+
+[![crates.io](https://img.shields.io/crates/v/sdustrs.svg)][crates-io]
 
 [Symmetric DUST][paper] 算法的 Rust 实现，用于在 DNA 序列中查找**低复杂度区域**
 （low-complexity region）。本项目是 [lh3/sdust][sdust] C 版本的逐行移植：对同样的
@@ -8,13 +10,18 @@
 [paper]: http://www.ncbi.nlm.nih.gov/pubmed/16796549
 [dm]: http://www.ncbi.nlm.nih.gov/IEB/ToolBox/CPP_DOC/lxr/source/src/app/dustmasker/
 [sdust]: https://github.com/lh3/sdust
+[crates-io]: https://crates.io/crates/sdustrs
 
 ## 构建
 
 ```sh
 cargo build --release          # 产物：target/release/sdust
-cargo install --path .         # 可选：安装到 ~/.cargo/bin
+cargo install sdustrs          # 从 crates.io 安装，命令名仍为 sdust
+cargo install --path .         # 可选：从本地源码安装到 ~/.cargo/bin
 ```
+
+crate 名为 `sdustrs`（`sdust` 在 crates.io 上已被占用），但命令行程序与库内的
+部分 API 沿用上游命名，安装后的可执行文件叫 `sdust`。
 
 只需要 Rust 1.70 及以上版本；第三方依赖只有 `clap`（命令行解析）与 `flate2`（读取 gzip）。
 
@@ -63,8 +70,13 @@ lower_polyA	60	122
 
 ## 库用法
 
+```toml
+[dependencies]
+sdustrs = "0.2"
+```
+
 ```rust
-use sdust::{Masker, Params, sdust};
+use sdustrs::{Masker, Params, sdust};
 
 // 一次性调用
 let regions = sdust(b"ACGTACGTACGTAAAAAAAAAAAAAAAAAAAAAAAAAAAAACGTACGT", Params::default());
@@ -83,7 +95,7 @@ for record in sequences {
 `Params::new(total, window)` 对应命令行的 `-t` 与 `-w`。参数非法时
 `Params::validate()` 会返回错误说明；`Masker::mask` 本身不会 panic。
 
-另外提供 `sdust::fastx` 模块，它是一个与 `kseq.h` 行为一致的流式 FASTA/FASTQ
+另外提供 `sdustrs::fastx` 模块，它是一个与 `kseq.h` 行为一致的流式 FASTA/FASTQ
 解析器（`fastx::Reader`），读写缓冲区复用，可直接用于其他工具。
 
 ## 与 C 版本的一致性

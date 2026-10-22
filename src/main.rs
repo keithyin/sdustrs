@@ -11,8 +11,8 @@ use std::process::ExitCode;
 use clap::{error::ErrorKind, Parser};
 use flate2::read::MultiGzDecoder;
 
-use sdust::fastx;
-use sdust::{Interval, Masker, Params};
+use sdustrs::fastx;
+use sdustrs::{Interval, Masker, Params};
 
 /// Size of the buffers used for input and output.
 const BUF_SIZE: usize = 64 * 1024;

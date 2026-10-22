@@ -1,6 +1,6 @@
 [package]
-name = "sdust"
-version = "0.1.2"
+name = "sdustrs"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.70"
 description = "Symmetric DUST: low-complexity DNA region masking (Rust port of lh3/sdust)"
@@ -11,9 +11,10 @@ keywords = ["bioinformatics", "dna", "low-complexity", "masking", "dust"]
 categories = ["science::bioinformatics"]
 
 [lib]
-name = "sdust"
+name = "sdustrs"
 path = "src/lib.rs"
 
+# The CLI keeps the upstream name (`sdust`), the crate is published as `sdustrs`.
 [[bin]]
 name = "sdust"
 path = "src/main.rs"

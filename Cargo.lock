@@ -177,8 +177,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "sdust"
-version = "0.1.2"
+name = "sdustrs"
+version = "0.2.0"
 dependencies = [
  "clap",
  "flate2",

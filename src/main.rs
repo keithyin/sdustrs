@@ -30,11 +30,11 @@ const USAGE: &str = "Usage: sdust [-w 64] [-t 20] <in.fa>";
                  standard input."
 )]
 struct Cli {
-    /// Window size [64]
+    /// Window size
     #[arg(short = 'w', long = "window", value_name = "INT", default_value_t = Params::DEFAULT_WINDOW)]
     window: u32,
 
-    /// Score threshold [20]
+    /// Score threshold
     #[arg(short = 't', long = "total", value_name = "INT", default_value_t = Params::DEFAULT_TOTAL)]
     total: u32,
 
